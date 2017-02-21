@@ -1,0 +1,161 @@
+---
+title: "Shiny Mapping Examples"
+output:
+  html_notebook: default
+  runtime: shiny
+---
+
+Let's briefly recap what our data looks like. 
+
+```{r, echo=FALSE, result='hide'}
+
+base.dir = '.'
+data.dir = file.path(base.dir,'data')
+precip.dir = file.path(data.dir,'indiana_precipitation')
+
+# read in location and description of the precip monitor stations
+stations.df <- read.csv( file.path(precip.dir,'station.csv') )
+
+# read in the precipitation data
+precip.df = data.frame()
+precip.files = list.files(path=precip.dir,pattern="hr.*.csv")
+
+for (i in 1:length(precip.files)) {
+  # get the station id from the file path
+  matches = gregexpr("[0-9]+",precip.files[i])
+  station.id = regmatches(precip.files[i],matches)[[1]]
+  
+  # save the file to our dataframe,
+  # associating the station id with each row
+  p = file.path(precip.dir,precip.files[i])
+  df = read.csv(p)
+  df$Station.ID = station.id
+  precip.df = rbind(precip.df,df)
+}
+
+```
+
+Stations is a dataframe with the longitude and latitude location of the observation sites. It also includes a station id and a station name:
+```{r}
+print(head(stations.df))
+```
+
+Precipitation is a dataframe holding all of the precipitation counts for each observation station:
+```{r}
+print(head(precip.df))
+```
+
+We can combine our leaflet map with a plotly graph. When a user clicks a marker on the map, the plot will be automatically updated with precipitation values.
+
+```{r, echo=FALSE, result='hide'}
+library(dplyr)
+library(ggplot2)
+library(lattice)
+library(leaflet)
+library(shiny)
+library(plotly)
+```
+
+```{r, echo = FALSE}
+
+# uses the following dataframes from above:
+# stations.df
+# precip.df
+
+shinyApp(
+
+  ui = bootstrapPage(
+    tags$style(type = "text/css", "html, body {width:100%;height:100%}"),
+    leafletOutput("map", width = "100%", height = "100%"),
+    absolutePanel (bottom = 15, right = 2,
+                  plotOutput("plot.lattice", height=250, width=300),
+                  plotlyOutput("plot.plotly", height=250, width=300)
+    )
+  ),
+
+  server = function(input, output) {
+    data <- reactiveValues(
+      clickedMarker=NULL,
+      station.df=data.frame(Time=c(0),Precipitation=c(0))
+    )
+
+    # save information about which marker was clicked
+    observeEvent(input$map_marker_click, {
+      p <- input$map_marker_click
+      data$clickedMarker <- p
+
+      # lookup the station id of the selected marker
+      # could have also filtered by p$id if we set the
+      # layerId parameter in the addCircleMarkers() function.
+      station.id <- (stations.df %>%
+                       filter(latitude == p$lat,
+                              longitude == p$lng) %>%
+                       select(Station.ID)
+                    )[[1]]
+
+      # create a Time/Precip dataframe for the selected marker
+      # this will be used later to generate our plot
+      data$station.df <- precip.df %>%
+                           filter(Station.ID == station.id)
+    })
+
+    # clicks on non-marker items do nothing
+    observeEvent(input$map_click, {
+      data$clickedMarker <- NULL
+    })
+
+    # print out info for the clicked marker
+    output$clickInfo <- renderPrint({data$clickedMarker})
+
+    # generate our Leaflet based map output 
+    output$map <- renderLeaflet({
+      leaflet() %>%
+        addTiles() %>%
+        addCircleMarkers(
+          data = stations.df,
+          lng = ~longitude,
+          lat = ~latitude,
+          radius = 4,
+          fillOpacity = 0.8,
+          layerId = ~Station.ID,
+          popup = paste(
+            "Station Name: ", stations.df$Station.Name, "<br>",
+            "Station ID: ", stations.df$Station.ID, "<br>",
+            "Latitude: ", stations.df$latitude, "<br>",
+            "Longitude: ", stations.df$longitude, "<br>"
+          )
+        )
+    })
+
+    # generate our lattice based xy curve
+    # based on the data in our reactive dataframe data$station.df
+    output$plot.lattice <- renderPlot({
+      if (is.null(data$station.df)) {
+        return(NULL)
+      }
+      print(xyplot(Precipitation ~ Time, data = data$station.df))
+    })
+
+    # generate our Plotly based xy curve
+    # based on the data in our reactive dataframe data$station.df
+    output$plot.plotly <- renderPlotly({
+      if (is.null(data$station.df)) {
+        return(NULL)
+      }
+
+      # using the plot_ly() function (it's slow!)
+      #plot_ly(data$station.df, x = ~Time, y = ~Precipitation)
+
+      # using the ggplotly() function (it's faster)
+      p = ggplot(data$station.df,aes(Time,Precipitation)) +
+          geom_line()
+      ggplotly(p)
+    })
+
+  },
+
+  options = list(height = 500)
+)
+```
+
+

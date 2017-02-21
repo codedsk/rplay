@@ -1,0 +1,172 @@
+---
+title: "Leaflet & Plotly Mapping Examples"
+output:
+  html_document: default
+  html_notebook: default
+---
+
+```{r echo=FALSE, results='hide'}
+# setup file paths
+base.dir = '.'
+data.dir = file.path(base.dir,'data')
+```
+
+
+Examples from the [RStudio leaflet tutorial](https://rstudio.github.io/leaflet/)
+
+Introduction
+
+Build a basic map, using tiles from OpenStreetMap and adding a marker for Purdue University.
+
+```{r}
+library(leaflet)
+
+pu_lng = -86.9212
+pu_lat = 40.4237
+
+m <- leaflet() %>%
+     addTiles() %>% # Add default OpenStreetMap map tiles
+     addMarkers(lng=pu_lng, lat=pu_lat, popup="Purdue University")
+
+m
+```
+
+
+[The Map Widget](https://rstudio.github.io/leaflet/map_widget.html)
+
+```{r}
+# Adjust the initial view of the map
+# zoom levels range from 0-19
+# https://wiki.openstreetmap.org/wiki/Zoom_levels
+m %>% setView(lng=pu_lng, lat=pu_lat, zoom=12)
+```
+
+
+Users can also use the `fitBounds()` function to set a lat and lon boundary of the map view
+
+```{r}
+# specify the upper left and lower right corners of the map boundary
+# use a constant offset in degrees
+offset = 0.125
+m %>% fitBounds(lng1=pu_lng+offset, lat1=pu_lat+offset,
+                lng2=pu_lng-offset, lat=pu_lat-offset)
+```
+
+
+Including data from a file CSV files can be read into a dataframe and fed into the Leaflet interface
+
+```{r}
+# indiana precipitation dataframe
+stations.df <- read.csv(
+                 file.path(
+                   data.dir,'indiana_precipitation/station.csv'))
+print(head(stations.df))
+```
+
+The data has fields named `latitude` and `longitude` which makes it easy for the leaflet library to locate the columns for latitude and longitude. Let's plot the locations and setup a label for each point.
+
+First, create a `leaflet()` map object and set it up to use the default tile source from OpenStreetMap.
+
+```{r}
+# indiana precipitation map
+ipm <- leaflet() %>%
+         addTiles()
+```
+
+Next, add markers at each station's location using the `addMarkers()` function.
+
+```{r}
+ipm %>% addMarkers(
+          data = stations.df,
+          lng = ~longitude,
+          lat = ~latitude,
+          popup = paste(
+            "Station Name: ", stations.df$Station.Name, "<br>",
+            "Station ID: ", stations.df$Station.ID, "<br>",
+            "Latitude: ", stations.df$latitude, "<br>",
+            "Longitude: ", stations.df$longitude, "<br>"
+          )
+        )
+```
+
+
+The regular markers look a little too "chunky". They take up a bunch of space. Let's try the same map with smaller circles instead.
+
+```{r}
+ipm %>% addCircles(
+          data = stations.df,
+          lng = ~longitude,
+          lat = ~latitude,
+          radius = 40,
+          fillOpacity = 0.8,
+          popup = paste(
+            "Station Name: ", stations.df$Station.Name, "<br>",
+            "Station ID: ", stations.df$Station.ID, "<br>",
+            "Latitude: ", stations.df$latitude, "<br>",
+            "Longitude: ", stations.df$longitude, "<br>"
+          )
+        )
+```
+
+Using `addCircles()` places shapes on the map, but these are not markers. Use the `addCircleMarkers()` function to add circle markers. You'll need to use markers if you want to interact with a leaflet map in a Shiny application.
+
+```{r}
+ipm %>% addCircleMarkers(
+          data = stations.df,
+          lng = ~longitude,
+          lat = ~latitude,
+          radius = 4,
+          layerId = ~Station.ID,
+          fillOpacity = 0.8,
+          popup = paste(
+            "Station Name: ", stations.df$Station.Name, "<br>",
+            "Station ID: ", stations.df$Station.ID, "<br>",
+            "Latitude: ", stations.df$latitude, "<br>",
+            "Longitude: ", stations.df$longitude, "<br>"
+          )
+        )
+```
+
+Read in the precipitation data for each station
+
+```{r}
+precip.df = data.frame()
+precip.dir = file.path(data.dir,"indiana_precipitation")
+precip.files = list.files(path=precip.dir,pattern="hr.*.csv")
+for (i in 1:length(precip.files)) {
+    matches = gregexpr("[0-9]+",precip.files[i])
+    station.id = regmatches(precip.files[i],matches)[[1]]
+    p = file.path(precip.dir, precip.files[i])
+    df = read.csv(p)
+    df$Station.ID = station.id
+    precip.df = rbind(precip.df,df)
+}
+print(head(precip.df))
+```
+
+
+Visualize the precipitation data for station id 120132
+
+```{r}
+station.df = precip.df[precip.df$Station.ID == "120132",]
+# station.df
+plot(station.df$Time, station.df$Precipitation)
+```
+
+Same plot using ggplot2 library
+
+```{r}
+library(ggplot2)
+
+p = ggplot(station.df,aes(Time,Precipitation)) +
+    geom_line()
+p
+```
+
+Same plot using plotly, a service that provides javascripty d3.js plots
+
+```{r}
+library(plotly)
+
+ggplotly(p)
+```
