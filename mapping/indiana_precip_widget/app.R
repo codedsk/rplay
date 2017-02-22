@@ -1,6 +1,3 @@
-library(dplyr)
-library(htmltools)
-
 base.dir = './playground/R/mapping/'
 data.dir = file.path(base.dir,'data')
 widgets.dir = file.path(base.dir,'widgets')

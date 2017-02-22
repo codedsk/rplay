@@ -1,6 +1,3 @@
-library(dplyr)
-library(htmltools)
-library(markdown)
 library(shiny)
 
 base.dir = '..'
