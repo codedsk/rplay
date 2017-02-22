@@ -39,10 +39,12 @@ stationName2stationId <- function(stationName) {
 }
 
 stationId2stationName <- function(stationId) {
-  stationName <- (stations.df %>%
-                    filter(Station.ID == stationId) %>%
-                    select(Station.Name)
-                 )[[1]]
+  stationName <- as.character(
+                   (stations.df %>%
+                      filter(Station.ID == stationId) %>%
+                      select(Station.Name)
+                   )[[1]]
+                 )
   return(stationName)
 }
 

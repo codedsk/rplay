@@ -1,0 +1,88 @@
+---
+title: "Indiana Precipitation"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: rows
+    social: menu
+    source_code: embed
+---
+
+```{r setup, include=FALSE}
+library(leaflet)
+library(plotly)
+library(DT)
+library(flexdashboard)
+library(dplyr)
+
+base.dir = '.'
+data.dir = file.path(base.dir,'data')
+precip.dir = file.path(data.dir,'indiana_precipitation')
+
+# read in location and description of the precip monitor stations
+stations.df <- read.csv( file.path(precip.dir,'station.csv') )
+
+# read in the precipitation data
+precip.details.df = data.frame()
+precip.files = list.files(path=precip.dir,pattern="hr.*.csv")
+
+for (i in 1:length(precip.files)) {
+  # get the station id from the file path
+  matches = gregexpr("[0-9]+",precip.files[i])
+  station.id = as.numeric(regmatches(precip.files[i],matches)[[1]])
+  station.name <- as.character(
+                    (stations.df %>%
+                       filter(Station.ID == station.id) %>%
+                       select(Station.Name)
+                    )[[1]]
+                  )
+  # save the file to our dataframe,
+  # associating the station id with each row
+  p = file.path(precip.dir,precip.files[i])
+  df = read.csv(p)
+  df2 = data.frame(
+          Station.Name = c(station.name),
+          Station.ID = c(station.id),
+          min = c(min(df[,'Precipitation'])),
+          max = c(max(df[,'Precipitation'])),
+          mean = c(mean(df[,'Precipitation']))
+        )
+  precip.details.df = rbind(precip.details.df,df2)
+}
+
+```
+
+### Observation Stations {data-width=650}
+
+```{r}
+# indiana precipitation map
+leaflet() %>%
+  addTiles() %>%
+  addCircleMarkers(
+    data = stations.df,
+    lng = ~longitude,
+    lat = ~latitude,
+    radius = 4,
+    layerId = ~Station.ID,
+    fillOpacity = 0.8,
+    popup = paste(
+      "Station Name: ", stations.df$Station.Name, "<br>",
+      "Station ID: ", stations.df$Station.ID, "<br>",
+      "Latitude: ", stations.df$latitude, "<br>",
+      "Longitude: ", stations.df$longitude, "<br>"
+    )
+  )
+```
+
+### Precipitation Details {data-width=350}
+
+```{r}
+datatable(
+  precip.details.df,
+  extensions="Scroller",
+  style="bootstrap",
+  class="compact",
+  width="100%",
+  options=list(deferRender=TRUE, scrollY=300, scroller=TRUE)
+)
+```
+
