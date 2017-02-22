@@ -1,4 +1,4 @@
-# R and Spacial Data Visualization
+# R and Geospacial Data Visualization
 
 ## Examples:
 
@@ -8,7 +8,7 @@ A R Markdown Notebook that shows basic usage of the Leaflet and Plotly packages.
 
 **shiny\_mapping\_examples.Rmd**
 
-A R Markdown Notebook that uses the Shiny runtime for rendering. It still combines narritive, code blocks, and output just like a regular R Markdown file, but also include a Shiny application (or widgets) that require a running Shiny server to support the interactive widgets. This file builds upon leaflet\_plotly\_examples.Rmd by showing how to use the `shinyApp()` function to combine the Leaflet map and Plotly graph into a single application where the elements react to each other. Inside Rstudio, use the Run Document button to convert the notebook with Shiny application into a HTML web page.
+A R Markdown Notebook that uses the Shiny runtime for rendering. This is often referred to as an interactive document. It still combines narritive, code blocks, and output just like a regular R Markdown file, but also include a Shiny application (or widgets) that require a running Shiny server to support the interactive widgets. This file builds upon leaflet\_plotly\_examples.Rmd by showing how to use the `shinyApp()` function to combine the Leaflet map and Plotly graph into a single application where the user can manipulate the elements, and the elements react to each other. Inside Rstudio, use the Run Document button to convert the notebook with Shiny application into a HTML web page.
 
 **indiana\_precip\_shiny/app.R**
 
@@ -16,7 +16,7 @@ A Shiny application hosted in an R script. The R script also includes code to re
 
 **widgets/precipplot.R**
 
-A Shiny widget hosted in an R script. Shiny applications can also be used as Shiny widgets in the megawidget sense. This example takes the Leaflet map and Plotly graph from the previous examples, and adds a dropdown menu that allows users to choose the observation station they would like to highlight on the map. The output graph is controlled by user interaction with both the dropdown menu options and makers on the map. This widget can be included in an R Markdown file as a Shiny widget or a Shiny application, or embedded in another Shiny application.
+A Shiny widget hosted in an R script. Shiny applications can also be used as Shiny widgets, in the megawidget sense, inside of interactive documents or other Shiny applications. This example takes the Leaflet map and Plotly graph from the previous examples, and adds a dropdown menu that allows users to choose the observation station they would like to highlight on the map. The output graph is controlled by user interaction with both the dropdown menu options and makers on the map. This widget can be included in an R Markdown file as a Shiny widget or a Shiny application, or embedded in another Shiny application.
 
 **indiana\_precip\_widget/app.R**
 
