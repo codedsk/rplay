@@ -3,7 +3,7 @@ title: "Summarizing Twitter Follows"
 output: html_notebook
 ---
 
-# Incomming data and goals
+# Incoming data and goals
 
 Example Twitter relationship CSV file. The CSV file follows these rules:
 
