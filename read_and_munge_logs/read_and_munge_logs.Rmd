@@ -21,7 +21,7 @@ Our logfile looks like this:
 
 Read the log file into a tibble using the read_delim function. We use read_delim because the data is space separated, but the lines are of different length. With read_delim(), we can specify the delimiter. We also specify the column types. The default behavior of read_delim is to guess the column types. Normally this works, but in our case, we will want to do a little bit of manipulation of the date and time fields which is easier to do if these are character vectors instead of *date* and *time* column types. Set column names along the way.
 
-```{r}
+```{r message=FALSE}
 library(readr)
 
 logtext= "2017/01/01 00:02:01 genomics-test : 0.36 0.09 0.03
@@ -57,7 +57,7 @@ Let's try to put it into a dataframe
 
 First, convert the separate date and time columns into one datetime column with the format 'YYYYMMDDHH' dropping the minute and seconds.
 
-```{r}
+```{r message=FALSE}
 library(lubridate)
 library(dplyr)
 
@@ -83,7 +83,7 @@ data
 
 With the columns sorted by datetime, and then by host, we can pull out the load values for each host by datetime without needing to closely track of which load value goes with which host. The hosts are in ascending order, so when we eventually put them in a data frame and name our columns, we only need to remember to preserve this order.
 
-```{r echo=TRUE}
+```{r}
 dates <- data %>%
            select(datetime) %>%    # select the datetime column
            arrange(datetime) %>%   # sort the rows in ascending order
@@ -94,7 +94,7 @@ dates
 
 Map the dates onto an anonymous function (formula) that filters rows of our data tibble matching each datetime string, selecting the load column, and returning a vector of the values. For each call to the anonymous function, the result will be a vector of load values for a specific date. The map function will make each vector an element in the list it returns.
 
-```{r}
+```{r message=FALSE}
 library(purrr)
 q = map(dates, ~ data %>%
                    filter(datetime == .x) %>%  # filter rows matching the date

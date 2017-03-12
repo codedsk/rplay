@@ -12,15 +12,13 @@ Example Twitter relationship CSV file. The CSV file follows these rules:
 3. follows is 1 if from_id follows to_id, 2 if from_id == to_id
 4. all users are represented by a row where follows == 2 (ie. from_id == to_id)
 
-```{r}
-
-text = "from_id,     from_sn, to_id,    to_sn, follows
+```
+from_id,     from_sn, to_id,    to_sn, follows
  11111,        alice, 11111,     alice,       2
  22222,          bob, 11111,     alice,       1
  33333,       claire, 11111,     alice,       1
  22222,          bob, 22222,       bob,       2
  33333,       claire, 33333,    claire,       2
-"
 ```
 
 Our goal is to be able write a function named summarize_follows() that accepts a CSV file or data frame as shown above, and returns a tibble listing the number of followers and the number of people being followed by each user. Our interaction should look something like this:
@@ -45,7 +43,13 @@ Our first step is loading the data into a data frame like object. The readr modu
 
 ```{r}
 library(readr)
-
+text = "from_id,     from_sn, to_id,    to_sn, follows
+ 11111,        alice, 11111,     alice,       2
+ 22222,          bob, 11111,     alice,       1
+ 33333,       claire, 11111,     alice,       1
+ 22222,          bob, 22222,       bob,       2
+ 33333,       claire, 33333,    claire,       2
+"
 data <- read_csv(text)
 data
 ```
@@ -168,7 +172,7 @@ map_df(user_ids[[1]], ~follow_metrics(data,.x))
 
 First, we get all of the unique user ids by using the filter() and select() functions. We filter all rows where the follows column is equal to two, and then select only the from_id column. This returns back a single column tibble where the observations are the user ids.
 
-Second we call purrr's map_df() function. For the first argument, we get a list of the user ids by accessing the first column (using [[1]]) of the user_ids tibble. For the second argument, we use a formula (thats the tilde (~)) where we call the follow_metrics() function, passing the data tibble as the first argument and .x as the second. .x represents a placeholder of where map_df() should place the values it is mapping on to the our formula (the second argument).
+Second we call purrr's map_df() function. For the first argument, we get a list of the user ids by accessing the first column (using [[1]]) of the user_ids tibble. For the second argument, we use a formula (that's the tilde (~)) where we call the follow_metrics() function, passing the data tibble as the first argument and *.x* as the second. *.x* represents a placeholder of where map_df() should place the values it is mapping on to the our formula (the second argument).
 
 Each value in the user_ids tibble will be passed to the formula, which calls our follow_metrics() function. The follow_metrics() function will return a single-row tibble each time it is called, and map_df() will aggregate these rows into one multi-row tibble as its result.
 
