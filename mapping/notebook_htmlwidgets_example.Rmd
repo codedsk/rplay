@@ -1,0 +1,89 @@
+---
+title: "Leaflet & Plotly Mapping Examples"
+output:
+  html_document: default
+  html_notebook: default
+---
+
+```{r echo=FALSE, results='hide'}
+# setup file paths
+base.dir = '.'
+data.dir = file.path(base.dir,'data')
+```
+
+
+Data from a file CSV files can be read into a dataframe and fed into the Leaflet interface
+
+```{r}
+# indiana precipitation dataframe
+stations.df <- read.csv(
+                 file.path(
+                   data.dir,'indiana_precipitation/station.csv'))
+print(head(stations.df))
+```
+
+The data has fields named `latitude` and `longitude` which makes it easy for the leaflet library to locate the columns for latitude and longitude. Let's plot the locations and setup a label for each point.
+
+First, create a `leaflet()` map object and set it up to use the default tile source from OpenStreetMap.
+
+```{r}
+# indiana precipitation map
+ipm <- leaflet() %>%
+         addTiles()
+```
+
+Next, add markers at each station's location using the `addMarkers()` function.
+
+```{r}
+ipm %>% addCircleMarkers(
+          data = stations.df,
+          lng = ~longitude,
+          lat = ~latitude,
+          radius = 4,
+          layerId = ~Station.ID,
+          fillOpacity = 0.8,
+          popup = paste(
+            "Station Name: ", stations.df$Station.Name, "<br>",
+            "Station ID: ", stations.df$Station.ID, "<br>",
+            "Latitude: ", stations.df$latitude, "<br>",
+            "Longitude: ", stations.df$longitude, "<br>"
+          )
+        )
+```
+
+Read in the precipitation data for each station
+
+```{r}
+precip.df = data.frame()
+precip.dir = file.path(data.dir,"indiana_precipitation")
+precip.files = list.files(path=precip.dir,pattern="hr.*.csv")
+for (i in 1:length(precip.files)) {
+    matches = gregexpr("[0-9]+",precip.files[i])
+    station.id = regmatches(precip.files[i],matches)[[1]]
+    p = file.path(precip.dir, precip.files[i])
+    df = read.csv(p)
+    df$Station.ID = station.id
+    precip.df = rbind(precip.df,df)
+}
+print(head(precip.df))
+```
+
+
+Visualize the precipitation data for station id 120132
+
+```{r}
+station.df = precip.df[precip.df$Station.ID == "120132",]
+
+library(ggplot2)
+
+p = ggplot(station.df,aes(Time,Precipitation)) +
+    geom_line()
+```
+
+Visualize the plot using plotly, a service that provides javascripty d3.js plots
+
+```{r}
+library(plotly)
+
+ggplotly(p)
+```
