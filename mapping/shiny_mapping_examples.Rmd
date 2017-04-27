@@ -24,7 +24,7 @@ for (i in 1:length(precip.files)) {
   # get the station id from the file path
   matches = gregexpr("[0-9]+",precip.files[i])
   station.id = regmatches(precip.files[i],matches)[[1]]
-  
+
   # save the file to our dataframe,
   # associating the station id with each row
   p = file.path(precip.dir,precip.files[i])

@@ -1,0 +1,192 @@
+---
+title: "Summarizing Twitter Follows"
+output: html_notebook
+---
+
+# Incoming data and goals
+
+Example Twitter relationship CSV file. The CSV file follows these rules:
+
+1. from_id and to_id are unique IDs per user
+2. from_sn and to_sn are screen names for each user
+3. follows is 1 if from_id follows to_id, 2 if from_id == to_id
+4. all users are represented by a row where follows == 2 (ie. from_id == to_id)
+
+```
+from_id,     from_sn, to_id,    to_sn, follows
+ 11111,        alice, 11111,     alice,       2
+ 22222,          bob, 11111,     alice,       1
+ 33333,       claire, 11111,     alice,       1
+ 22222,          bob, 22222,       bob,       2
+ 33333,       claire, 33333,    claire,       2
+```
+
+Our goal is to be able write a function named summarize_follows() that accepts a CSV file or data frame as shown above, and returns a tibble listing the number of followers and the number of people being followed by each user. Our interaction should look something like this:
+
+```
+> data = read_csv(my_file.csv)
+> summarize_follows(data)
+
+# A tibble: 3 × 3
+           sn num_following num_follows
+        <chr>         <int>       <int>
+1        alice             0           2
+2          bob             1           0
+3       claire             1           0
+```
+
+Let's get started.
+
+# Reading the Data
+
+Our first step is loading the data into a data frame like object. The readr module provides the read_csv() function that reads in a csv file and tries to do some smart guessing at column types. It returns a tibble (kind of like a data frame) of the data.
+
+```{r}
+library(readr)
+text = "from_id,     from_sn, to_id,    to_sn, follows
+ 11111,        alice, 11111,     alice,       2
+ 22222,          bob, 11111,     alice,       1
+ 33333,       claire, 11111,     alice,       1
+ 22222,          bob, 22222,       bob,       2
+ 33333,       claire, 33333,    claire,       2
+"
+data <- read_csv(text)
+data
+```
+
+By playing with the data tibble, we can get the number of follows a person has by looking up how many times their user_id is listed in the to_id column, but we should only count the columns where follows is equal to 1, to avoid counting the self follow. Let's see how many followers alice (to_id: 11111) has:
+
+```{r}
+library(dplyr)
+
+follows <- data %>%
+             filter(to_id == 11111, follows == 1) %>%
+             count()
+
+# print out the value
+follows
+```
+
+In the example above, we use the %>% pipe command to cleanly layout how we want to transform and filter our data. We start by taking data and piping it to the dplyr's filter() function which allows us to pick rows based on conditions. Our filter function has two conditions:
+
+1. to_id == 11111
+2. follows == 1
+
+The filter function will return back to us another tibble where the to_id matches our user's id and the follows value is equal to 1. We then pass this returned tibble to the count() function, which returns a tibble with the number of rows. Lastly we pull the number out of the tibble by piping the tibble to .[[1]], which accesses the first column of the tibble. Our tibble should only have one row at this point. Note the '.', before the double square bracket access, which is needed because we are using the tibble's double square bracket access as a part of the data piping (%>%).
+
+```{r}
+follows %>% .[[1]]
+```
+
+Let's save the value in our follows variable instead of saving a tibble with the value.
+
+```{r}
+follows <- follows %>% .[[1]]
+```
+
+We can use similar code to count the number of people a user is following:
+
+```{r}
+following <- data %>% 
+               filter(from_id == 11111, follows == 1) %>%
+               count() %>%
+               .[[1]]
+
+following
+```
+
+In this example we count the number of rows where our user's id is in the from_id column and follows is equal to 1.
+
+Now, we can figure out the number of followers and the number of people a user is following. All this time, we've been using the user's ID and in our desired output, we wanted the user's screen name. We can grab that from the data tibble as well.
+
+```{r}
+
+sn = data %>%
+       filter(from_id == 11111, follows == 2) %>%
+       select(from_sn) %>%
+       .[[1]]
+sn
+```
+
+Similar to our previous examples, we can filter the data and find the row where the from_id is equal to our user's id. This time, we want to also check if the follows column equals 2, denoting that the row is a self follow. We use dplyr's select() function to select the from_sn column from the filtered row, and then extract the value of the resultant tibble, which should be the user's screen name.
+
+Using the code above, we can gather all of the pieces of one row in our desired output. They are currently being stored in the follows, following, and sn variable. We can generate a new tibble object with all of this information by using the tibble() function.
+
+```{r}
+result = tibble(sn = sn,
+                num_following = following,
+                num_follows = follows)
+
+result
+```
+
+Even better, we can generalize these commands, and store them in a function:
+
+```{r}
+follow_metrics <- function(data, user_id) {
+
+  sn = data %>%
+         filter(from_id == user_id, follows == 2) %>%
+         select(from_sn) %>%
+         .[[1]]
+
+  following <- data %>% 
+                 filter(from_id == user_id, follows == 1) %>%
+                 count() %>%
+                 .[[1]]
+  
+  follows <- data %>%
+               filter(to_id == user_id, follows == 1) %>%
+               count() %>%
+               .[[1]]
+  
+  result = tibble(sn = sn,
+                   num_following = following,
+                   num_follows = follows)
+  
+  return (result)
+}
+
+
+```
+
+Our follow_metrics() function takes in our data tibble as its first argument, and the user id we would like to query as its second argument. It can be called like this:
+
+```{r}
+follow_metrics(data,11111)
+```
+
+Calling follow_metrics() manually, with a single user id at a time is lame. At this point we could write some code that gets all of the unique user ids from our data tibble and then loop through them with a for loop, calling the dplyr's add_row() function to build up a new tibble with the aggregated results. Instead, let's explore the map() and map_df() functions from the purrr package.
+
+purrr is a package that provides functional programming tools for R. We can write some code to get all of the unique user ids from our data tibble and then map them to the follow_metrics function. While our follow_metrics() function returns a 1-row tibble, the map_df() function can take all of the 1-row tibbles and aggregate them into a single multirow tibble.
+
+Here's the code:
+
+```{r}
+user_ids = data %>% 
+             filter(follows == 2) %>%
+             select(from_id)
+
+map_df(user_ids[[1]], ~follow_metrics(data,.x)) 
+```
+
+First, we get all of the unique user ids by using the filter() and select() functions. We filter all rows where the follows column is equal to two, and then select only the from_id column. This returns back a single column tibble where the observations are the user ids.
+
+Second we call purrr's map_df() function. For the first argument, we get a list of the user ids by accessing the first column (using [[1]]) of the user_ids tibble. For the second argument, we use a formula (that's the tilde (~)) where we call the follow_metrics() function, passing the data tibble as the first argument and *.x* as the second. *.x* represents a placeholder of where map_df() should place the values it is mapping on to the our formula (the second argument).
+
+Each value in the user_ids tibble will be passed to the formula, which calls our follow_metrics() function. The follow_metrics() function will return a single-row tibble each time it is called, and map_df() will aggregate these rows into one multi-row tibble as its result.
+
+Let's throw these last two commands in a function, and try it out:
+
+```{r}
+summarize_follows <- function(data) {
+  user_ids = data %>% 
+               filter(follows == 2) %>%
+               select(from_id)
+
+  result = map_df(user_ids[[1]], ~follow_metrics(data,.x)) 
+  return(result)
+}
+
+summarize_follows(data)
+```

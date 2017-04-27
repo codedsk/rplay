@@ -1,0 +1,140 @@
+---
+title: "Indiana Precipitation"
+output: 
+  flexdashboard::flex_dashboard:
+    social: menu
+    source_code: embed
+---
+
+```{r setup, include=FALSE}
+
+# This example shows off using the flexdashboard to
+# easily layout a graphical user interface. It also
+# shows the use of Crosstalk, an htmlwidgets package
+# add-on that allows widgets that share a common data
+# object to signal each other when selection or
+# filtering is performed on the shared data. Crosstalk
+# can be used in purely HTML documents (like this one)
+# or in Shiny applications.
+#
+# Before running the example, make sure you have
+# installed the development versions of crosstalk,
+# leaflet, and DT libs which support SharedData
+# objects:
+#
+# devtools::install_github("rstudio/leaflet")
+# devtools::install_github("rstudio/DT")
+# devtools::install_github("rstudio/crosstalk")
+#
+# The example loads the Indiana Precipitation dataset,
+# creates a Leaflet map from the station locations,
+# and displays precipitation summary details using a
+# DT datatable. As rows in the data table are selected,
+# the location is highlighted on the map. The map does
+# not support popups or selection. The map and data
+# table widgets are placed side by side in the layout.
+# On smaller screens, the layout is automatically
+# adjusted to place the widgets in a row-wise layout.
+#
+# It would be nice to include an xy graph of the
+# precipitation values, but these values are not
+# stored in the SharedData object. In another example,
+# we will show how to use reactiveValues to connect
+# these two widgets to an xy graph.
+
+
+library(crosstalk)
+library(leaflet)
+library(DT)
+library(flexdashboard)
+library(dplyr)
+
+base.dir = '.'
+data.dir = file.path(base.dir,'data')
+precip.dir = file.path(data.dir,'indiana_precipitation')
+
+# read in location and description of the precip monitor stations
+stations.df <- read.csv( file.path(precip.dir,'station.csv') )
+
+# read in the precipitation data
+precip.details.df = data.frame()
+precip.files = list.files(path=precip.dir,pattern="hr.*.csv")
+
+for (i in 1:length(precip.files)) {
+  # get the station id from the file path
+  matches = gregexpr("[0-9]+",precip.files[i])
+  
+  station.id = as.integer(regmatches(precip.files[i],matches)[[1]])
+  
+  station <- (stations.df %>%
+                filter(Station.ID == station.id)
+             )
+
+  # save the file to our dataframe,
+  # associating the station id with each row
+  p = file.path(precip.dir,precip.files[i])
+  df = read.csv(p)
+  station$min <- min(df[,'Precipitation'])
+  station$max <- max(df[,'Precipitation'])
+  station$mean <- mean(df[,'Precipitation'])
+  precip.details.df = rbind(precip.details.df,station)
+}
+
+# make a SharedData object that will link selections
+# between the Leaflet map and the DT datatable.
+sd <- SharedData$new(precip.details.df)
+```
+
+Column {data-width=500}
+--------------
+
+### Observation Stations
+```{r}
+# Seems that inside the leaflet object, the SharedData
+# object sd cannot be accessed as a data frame, so below
+# we use stations.df when building the popup.
+
+# Popups do not seem to be supported when using SharedData
+# objects.
+
+# indiana precipitation map
+leaflet() %>%
+  addTiles() %>%
+  addCircleMarkers(
+    data = sd,
+    radius = 4,
+    fillOpacity = 0.8
+#    popup = paste(
+#      "Station Name: ", stations.df$Station.Name, "<br>",
+#      "Station ID: ", stations.df$Station.ID, "<br>",
+#      "Latitude: ", stations.df$latitude, "<br>",
+#      "Longitude: ", stations.df$longitude, "<br>"
+#    )
+  )
+```
+
+Column {data-width=500}
+--------------
+
+### Precipitation Details 
+```{r}
+# hide the longitude and latitude columns
+hideCols = list(3,4)
+
+datatable(
+  sd,
+  selection="single",
+  extensions=c("Scroller"),
+  style="bootstrap",
+  class="compact",
+  width="100%",
+  options=list(
+    deferRender=TRUE,
+    scrollY=300,
+    scroller=TRUE,
+    columnDefs = list(list(
+      visible=FALSE,
+      targets=hideCols))
+    )
+)
+```

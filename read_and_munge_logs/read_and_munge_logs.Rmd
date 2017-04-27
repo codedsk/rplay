@@ -1,0 +1,153 @@
+---
+title: "Read and Munge Log Example"
+output: html_notebook
+---
+
+In this example, we try to tackle @jacoby's [blog post][1] about reading and munging data from a log.
+
+Our logfile looks like this:
+
+```
+2017/01/01 00:02:01 genomics-test : 0.36 0.09 0.03
+2017/01/01 00:02:02 genomics : 0.04 0.03 0.04
+2017/01/01 00:02:02 genomics-db : 0.12 0.05 0.01
+2017/01/01 00:02:04 genomics-apps : 1.87 1.24 0.79
+2017/01/01 01:02:02 genomics-db : 0.24 0.14 0.05
+2017/01/01 01:02:02 genomics-test : 0.53 0.14 0.04
+2017/01/01 01:02:03 genomics : 0.13 0.09 0.08
+2017/01/01 01:02:04 genomics-apps : 1.66 1.82 1.58
+2017/01/01 02:02:01 genomics-test : 0.15 0.03 0.01
+```
+
+Read the log file into a tibble using the read_delim function. We use read_delim because the data is space separated, but the lines are of different length. With read_delim(), we can specify the delimiter. We also specify the column types. The default behavior of read_delim is to guess the column types. Normally this works, but in our case, we will want to do a little bit of manipulation of the date and time fields which is easier to do if these are character vectors instead of *date* and *time* column types. Set column names along the way.
+
+```{r message=FALSE}
+library(readr)
+
+logtext= "2017/01/01 00:02:01 genomics-test : 0.36 0.09 0.03
+2017/01/01 00:02:02 genomics : 0.04 0.03 0.04
+2017/01/01 00:02:02 genomics-db : 0.12 0.05 0.01
+2017/01/01 00:02:04 genomics-apps : 1.87 1.24 0.79
+2017/01/01 01:02:02 genomics-db : 0.24 0.14 0.05
+2017/01/01 01:02:02 genomics-test : 0.53 0.14 0.04
+2017/01/01 01:02:03 genomics : 0.13 0.09 0.08
+2017/01/01 01:02:04 genomics-apps : 1.66 1.82 1.58
+2017/01/01 02:02:01 genomics-test : 0.15 0.03 0.01"
+
+data = read_delim(logtext,
+                  delim = " ",
+                  col_names = c('date','time','host','colon','load','x','y'),
+                  col_types = 'ccccddd'
+                 )
+
+data
+```
+
+In the end, we want a tibble formatted something closer to this:
+
+```
+   datetime        genomics    genomics-apps   genomics-db     genomics-test
+   2017010100      0.04        1.87            0.12            0.36
+   2017010101      0.13        1.66            0.15            0.53
+   ...
+```
+
+Where the machine names are the variables, and the machine loads are the observations.
+Let's try to put it into a dataframe
+
+First, convert the separate date and time columns into one datetime column with the format 'YYYYMMDDHH' dropping the minute and seconds.
+
+```{r message=FALSE}
+library(lubridate)
+library(dplyr)
+
+data = data %>% 
+         mutate(datetime = paste(data$date,data$time) %>%
+                             parse_date_time("%Y/%m/%d %H:%M:%S") %>%
+                             strftime(format="%Y%m%d%H",tz="UTC")
+         )
+
+data
+```
+
+Next, lets drop columns we are not intersted in working with, sort the rows by the datetime field, and rearrange the columns so datetime is first, host is second, and load is third.
+
+```{r}
+data = data %>%
+         select(datetime,host,load) %>%
+         arrange(datetime,host)
+
+data
+
+```
+
+With the columns sorted by datetime, and then by host, we can pull out the load values for each host by datetime without needing to closely track of which load value goes with which host. The hosts are in ascending order, so when we eventually put them in a data frame and name our columns, we only need to remember to preserve this order.
+
+```{r}
+dates <- data %>%
+           select(datetime) %>%    # select the datetime column
+           arrange(datetime) %>%   # sort the rows in ascending order
+           unique() %>%            # pick out the unique rows
+           .[[1]]                  # return a vector of the datetimes
+dates
+```
+
+Map the dates onto an anonymous function (formula) that filters rows of our data tibble matching each datetime string, selecting the load column, and returning a vector of the values. For each call to the anonymous function, the result will be a vector of load values for a specific date. The map function will make each vector an element in the list it returns.
+
+```{r message=FALSE}
+library(purrr)
+q = map(dates, ~ data %>%
+                   filter(datetime == .x) %>%  # filter rows matching the date
+                   select(load) %>%            # select the load column
+                   .[[1]]                      # return a vector of values
+       )
+q
+```
+
+Next, we need to convert our list of vectors into a data frame. Here each item in the list represents a row in the data frame. We need to make sure all rows have the same number of items so the conversion to a data frame doesn't unexpectedly recycle values. An [answer][2] from the R-Help mailing list provides guidance on one way to convert the list of vectors to a dataframe.
+
+Following their guidance, we get the max number of columns of all rows. This is the number of columns we will make all rows.
+
+```{r}
+nCol <- max(vapply(q, length, 0))
+nCol
+```
+
+Next, expand all rows to have *nCol* columns, using -1 as the fill value for rows missing columns.
+
+```{r}
+qq = lapply(q, function(row) c(row, rep(-1, nCol-length(row))))
+qq
+```
+
+Shape the list of vectors into a matrix so it can be read into a data frame. By using a dataframe instead of a tibble, we can create the datastructure without having setup the names of the columns ahead of time.
+
+```{r}
+qq <- matrix(unlist(qq), nrow=length(qq), ncol=nCol, byrow=TRUE) %>%
+        data.frame()
+qq
+```
+
+Add our host names as the column names for the data frame
+
+```{r}
+colnames(qq) <- data %>%
+                  select(host) %>%    # select the host column
+                  arrange(host) %>%   # sort the rows in ascending order
+                  unique() %>%        # pick out the unique rows
+                  .[[1]]              # return a vector of the names
+qq
+```
+
+
+Convert the dataframe into a tibble, and add our datetime column as the first column to complete the task.
+```{r}
+library(tibble)
+result = as_tibble(qq) %>%
+           add_column(datetime = dates, .before = 1)
+
+result
+```
+
+[1]: https://varlogrant.blogspot.com/2017/02/having-problems-munging-data-in-r.html
+[2]: https://stat.ethz.ch/pipermail/r-help/2012-January/300274.html
