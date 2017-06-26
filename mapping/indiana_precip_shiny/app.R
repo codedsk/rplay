@@ -1,7 +1,6 @@
 library(dplyr)
 library(ggplot2)
 library(htmltools)
-library(lattice)
 library(leaflet)
 library(shiny)
 library(plotly)
@@ -77,19 +76,36 @@ popupContent <- function(stationId) {
 }
 
 # Build the Shiny application user interface
-ui = bootstrapPage(
-  tags$style(type = "text/css", "html, body {width:100%;height:100%}, #station_select {background-color: rgba(0,0,255,1);}"),
-  leafletOutput("map", width = "100%", height = "100%"),
-  absolutePanel (top = 5, right = 2,
-                 draggable = TRUE,
-                 style = "opacity: 0.92",
-                 plotlyOutput("plot.plotly", height=250, width=300),
-                 selectInput("station_select", "Station:",
-                             stations.df[,'Station.Name'])
-  )
+
+ui <- bootstrapPage(
+ tags$style(type = "text/css", "html, body {width:100%;height:100%}, #station_select {background-color: rgba(0,0,255,1);}"),
+ leafletOutput("map", width = "100%", height = "100%"),
+ absolutePanel (top = 5, right = 2,
+                draggable = TRUE,
+                style = "opacity: 0.92",
+                plotlyOutput("plot.plotly", height=250, width=300),
+                selectInput("station_select", "Station:",
+                            stations.df[,'Station.Name'])
+ )
 )
 
-server = function(input, output, session) {
+# ui <- fluidPage(
+#   titlePanel("Indiana Precipitation"),
+#   
+#   fixedRow(
+#     column(width = 6, 
+#            leafletOutput('map'))
+#   ),
+# 
+#   fixedRow(
+#     column(width = 6, 
+#            plotlyOutput('plot.plotly'))
+#   )
+# )
+
+
+
+server <- function(input, output, session) {
   data <- reactiveValues(
     clickedMarker=NULL,
     station.df=data.frame(Time=c(0),Precipitation=c(0))
@@ -99,21 +115,21 @@ server = function(input, output, session) {
   # selected from the dropdown menu
   observeEvent(input$station_select, {
     station.id <- stationName2stationId(input$station_select)
-    
+
     # create a Time/Precip dataframe for the selected marker
     # this will be used later to generate our plot
     data$station.df <- precip.df %>%
                          filter(Station.ID == station.id)
-    
-#    # popup a placard at the lat/lng
-#    latlon <- stationId2stationLatLon(station.id)
-#    proxy <- leafletProxy("map")
-#    proxy %>%
-#      clearPopups() %>% 
-#      addPopups(lng=latlon$longitude,
-#                lat=latlon$latitude,
-#                layerId="selected",
-#                popup=popupContent(station.id))
+
+   # popup a placard at the lat/lng
+   latlon <- stationId2stationLatLon(station.id)
+   proxy <- leafletProxy("map")
+   proxy %>%
+     clearPopups() %>%
+     addPopups(lng=latlon$longitude,
+               lat=latlon$latitude,
+               layerId="selected",
+               popup=popupContent(station.id))
   })
   
   # monitor for clicks on map markers
@@ -163,27 +179,13 @@ server = function(input, output, session) {
       addTiles() %>%
       addCircleMarkers(
         data = stations.df,
+        label = ~Station.Name,
         lng = ~longitude,
         lat = ~latitude,
         radius = 4,
         fillOpacity = 0.8,
-        layerId = ~Station.ID,
-        popup = paste(
-          "Station Name: ", htmlEscape(stations.df$Station.Name), "<br>",
-          "Station ID: ", htmlEscape(stations.df$Station.ID), "<br>",
-          "Latitude: ", htmlEscape(stations.df$latitude), "<br>",
-          "Longitude: ", htmlEscape(stations.df$longitude), "<br>"
-        )
+        layerId = ~Station.ID
       )
-  })
-  
-  # generate our lattice based xy curve
-  # based on the data in our reactive dataframe data$station.df
-  output$plot.lattice <- renderPlot({
-    if (is.null(data$station.df)) {
-      return(NULL)
-    }
-    print(xyplot(Precipitation ~ Time, data = data$station.df))
   })
   
   # generate our Plotly based xy curve
@@ -202,4 +204,4 @@ server = function(input, output, session) {
 }
 
 # Run the application 
-shinyApp(ui = ui, server = server)
+shinyApp(ui,server)
