@@ -28,15 +28,15 @@ for (i in 1:length(precip.files)) {
   
   station.id = as.integer(regmatches(precip.files[i],matches)[[1]])
   
-  # save the file to our dataframe,
-  # associating the station id with each row
+  # read the precipitation data into a dataframe
   p = file.path(precip.dir,precip.files[i])
   df = read_csv(p)
 
-#  station <- (stations.df %>%
-#              filter(Station.ID == station.id) %>%
-#              mutate(data=list(df)))
-  
+  # create a row with StationID, StationName, lat, lon information
+  # from stations.df. Add to it some metrics about the precipitation
+  # data like min, max, mean amounts. store the precipitation dataframe
+  # in a listcolumn so we can quickly grab it later by indexing by the
+  # Station ID.
   station <- (stations.df %>%
               filter(Station.ID == station.id) %>%
               mutate(
@@ -47,11 +47,17 @@ for (i in 1:length(precip.files)) {
               )
              )
   
+  # build up a new tibble, row by row, that links in the min, max,
+  # mean, and precipitation dataframe.
   precip.details.df = rbind(precip.details.df,station)
 }
 
-# clean up the old stations dataframe
+# remove the old stations dataframe
 rm(stations.df)
+
+
+# some helper functions that make finding data in
+# precip.details.df simple
 
 stationName2stationId <- function(stationName) {
   stationId <- (precip.details.df %>%
@@ -96,6 +102,11 @@ stationId2precipdf <- function(stationId) {
   return(precipdf)
 }
 
+rowNumber2stationId <- function(rownum) {
+  stationId <- precip.details.df[rownum,"Station.ID"][[1]]
+  return(stationId)
+}
+
 popupContent <- function(stationId) {
   s <- precip.details.df %>% filter(Station.ID == stationId)
   content = paste(
@@ -109,6 +120,8 @@ popupContent <- function(stationId) {
 
 # Build the Shiny application user interface
 # using the shiny dashboard
+
+box.height = 500
 
 ui <- dashboardPage(
   
@@ -137,21 +150,45 @@ ui <- dashboardPage(
     '))),
     
     fluidRow(
-      box(title="Control",
-          solidHeader=TRUE,
+#      column(width = 6,
+#        box(title="Control",
+#            solidHeader=TRUE,
+#            width=NULL,
+#            selectInput("station_select", "Station:",
+#                        precip.details.df[,'Station.Name'])
+#        ),
+#        box(title="Station Details",
+#            solidHeader=TRUE,
+#            width=NULL,
+#            "Station Name: ", "XXXXXXXX", br(),
+#            "Data Record Time: ", "1948 to 2003", br(),
+#            "Precipitaion min: ", "0.0 cm", br(),
+#            "Precipitaion max: ", "6.2 cm", br(),
+#            "Precipitaion mean: ", "2.2 cm", br(),
+#            DT::dataTableOutput('tbl'),
+#            downloadButton("downloadData","Download Station Precipitation Data")
+#        )
+#      ),
+
+      box(title="Station Details",
+          solidHeader=FALSE,
           width=6,
-          selectInput("station_select", "Station:",
-                      precip.details.df[,'Station.Name'])
+          height=box.height,
+          DT::dataTableOutput('tbl'),
+          downloadButton("downloadData","Download Station Precipitation Data")
       ),
+    
       box(title="Station Locations",
-          solidHeader=TRUE,
+          solidHeader=FALSE,
           width=6,
+          height=box.height,
           leafletOutput('map')
       )
     ),
     
     fluidRow(
       box(width=12,
+          height=box.height,
           dygraphOutput('plot.dygraph')
       )
     )
@@ -161,30 +198,80 @@ ui <- dashboardPage(
 
 
 server <- function(input, output, session) {
+
+    # setup our reactive values
   data <- reactiveValues(
     clickedMarker=NULL,
     station.id=NULL,
     station.df=data.frame(Time=c(0),Precipitation=c(0))
   )
 
-  # update the plot based on the station the user
-  # selected from the dropdown menu
-  observeEvent(input$station_select, {
-    data$station.id <- stationName2stationId(input$station_select)
-
-    # create a Time/Precip dataframe for the selected marker
-    # this will be used later to generate our plot
-    data$station.df <- stationId2precipdf(data$station.id)
-    
+  updateMapSelectedStation <- function(station.id) {
+    # update the map widget with the newly selected station
     # popup a placard at the lat/lng
-    latlon <- stationId2stationLatLon(data$station.id)
+    latlon <- stationId2stationLatLon(station.id)
     proxy <- leafletProxy("map")
     proxy %>%
       clearPopups() %>%
       addPopups(lng=latlon$longitude,
                 lat=latlon$latitude,
                 layerId="selected",
-                popup=popupContent(data$station.id))
+                popup=popupContent(station.id))  
+  }
+
+  # updateSelectSelectedStation <- function(stationId) {
+  #   # update the selectInput widget with the selected station id
+  #   if(!is.null(stationId)){
+  #     if(is.null(input$station_select) || input$station_select!=stationId) {
+  #       stationName = stationId2stationName(stationId)
+  #       updateSelectInput(session,"station_select",selected=stationName)
+  #     }
+  #   }
+  # }
+  
+  updateDataTableSelectedStation <- function(stationId) {
+    # update the datatable widget with the selected station id
+    # only handles single row selection
+    if (!is.null(stationId)) {
+      indicies = which(precip.details.df$Station.ID == stationId)
+      if (!(indicies %in% input$tbl_rows_selected)) {
+        indicies <- switch(as.character(length(indicies)),
+                           "0" = NULL,
+                           c(indicies))
+        proxy <- dataTableProxy("tbl")
+        proxy %>% selectRows(indicies)
+      }
+    }
+  }
+  
+  
+  # setup observers for reactive values of our input widgets
+  
+  # update the plot and map based on the station the user
+  # selected from the dropdown menu
+  # observeEvent(input$station_select, {
+  #   data$station.id <- stationName2stationId(input$station_select)
+  # 
+  #   # create a Time/Precip dataframe for the selected marker
+  #   # this will be used later to generate our plot
+  #   data$station.df <- stationId2precipdf(data$station.id)
+  # 
+  #   # update the selected station on the map
+  #   updateMapSelectedStation(data$station.id)
+  # })
+  
+  # update the plot and map based on the station the user
+  # selected from the table
+  # this only supports a single row being selected
+  observeEvent(input$tbl_rows_selected, {
+    data$station.id <- rowNumber2stationId(input$tbl_rows_selected)
+
+    # create a Time/Precip dataframe for the selected marker
+    # this will be used later to generate our plot
+    data$station.df <- stationId2precipdf(data$station.id)
+
+    # update the selected station on the map
+    updateMapSelectedStation(data$station.id)
   })
   
   # monitor for clicks on map markers
@@ -204,19 +291,10 @@ server <- function(input, output, session) {
     # layerId parameter in the addCircleMarkers() function.
     data$station.id <- stationLatLon2stationId(p$lat,p$lng)
     
-    # create a Time/Precip dataframe for the selected marker
-    # this will be used later to generate our plot
-    data$station.df <- stationId2precipdf(data$station.id)
-
-    # update the selectInput widget with the marker name
-    if(!is.null(p$id)){
-      if(is.null(input$station_select) || input$station_select!=p$id) {
-        stationName = stationId2stationName(p$id)
-        updateSelectInput(session,
-                          "station_select",
-                          selected=stationName)
-      }
-    }
+    # update the select input widget with the new station id
+#    updateSelectSelectedStation(data$station.id)
+    
+    updateDataTableSelectedStation(data$station.id)
   })
   
   # monitor for clicks on the map (not on markers)
@@ -232,7 +310,7 @@ server <- function(input, output, session) {
     leaflet() %>%
       addTiles() %>%
       addCircleMarkers(
-        data = precip.details.df,
+        data = precip.details.df %>% select(Station.ID,Station.Name,latitude,longitude),
         label = ~Station.Name,
         lng = ~longitude,
         lat = ~latitude,
@@ -256,28 +334,40 @@ server <- function(input, output, session) {
       dyRangeSelector()
   })
   
-  # # generate our DataTables table
-  # # hide the longitude and latitude columns
-  # output$tbl <- DT::renderDataTable({
-  #   hideCols = list(3,4,8)
-  #   
-  #   datatable(
-  #     data,
-  #     selection="single",
-  #     extensions=c("Scroller"),
-  #     style="bootstrap",
-  #     class="compact",
-  #     width="100%",
-  #     options=list(
-  #       deferRender=TRUE,
-  #       scrollY=300,
-  #       scroller=TRUE,
-  #       columnDefs = list(list(
-  #         visible=FALSE,
-  #         targets=hideCols))
-  #     )
-  #   )
-  # })
+  # generate our DataTables table
+  # hide the longitude and latitude columns
+  output$tbl <- DT::renderDataTable({
+    #hideCols = list(3,4,8)
+    hideCols = list()
+
+    datatable(
+      precip.details.df %>% select(Station.ID,Station.Name,min,max,mean),
+      selection=list(mode="single",selected=c(1)),
+      extensions=c("Scroller"),
+      style="bootstrap",
+      class="compact",
+      width="100%",
+      height="100%",
+      options=list(
+        deferRender=TRUE,
+        scrollY=300,
+        scroller=TRUE,
+        columnDefs = list(list(
+          visible=FALSE,
+          targets=hideCols))
+      )
+    )
+  })
+  
+  output$downloadData <- downloadHandler(
+    filename = function() {
+      file.path(precip.dir,paste('hr',data$station.id,'.csv',sep=''))
+    },
+    content = function(file) {
+      write_csv(as.data.frame(data$station.df),file)
+    }
+  )
+  
 }
 
 # Run the application 
