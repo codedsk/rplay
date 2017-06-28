@@ -1,0 +1,214 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+
+```{r}
+library(dplyr)
+library(tibble)
+library(readr)
+library(htmltools)
+library(leaflet)
+library(shiny)
+library(shinydashboard)
+library(DT)
+library(dygraphs)
+
+base.dir = '..'
+data.dir = file.path(base.dir,'data')
+precip.dir = file.path(data.dir,'indiana_precipitation')
+
+# read in location and description of the precip monitor stations
+# station.csv has duplicate entries in it (121739).
+stations.df <- read_csv( file.path(precip.dir,'station.csv.clean') ) %>%
+                  rename(Station.ID = `Station ID`) %>%
+                  rename(Station.Name = `Station Name`)
+
+# read in the precipitation data
+precip.details.df = tibble()
+precip.files = list.files(path=precip.dir,pattern="hr.*.csv")
+
+for (i in 1:length(precip.files)) {
+  # get the station id from the file path
+  matches = gregexpr("[0-9]+",precip.files[i])
+  
+  station.id = as.integer(regmatches(precip.files[i],matches)[[1]])
+  
+  # save the file to our dataframe,
+  # associating the station id with each row
+  p = file.path(precip.dir,precip.files[i])
+  df = read_csv(p)
+
+#  station <- (stations.df %>%
+#              filter(Station.ID == station.id) %>%
+#              mutate(data=list(df)))
+  
+  station <- (stations.df %>%
+              filter(Station.ID == station.id) %>%
+              mutate(
+                min = min(df$Precipitation),
+                max = max(df$Precipitation),
+                mean = mean(df$Precipitation),
+                data = list(df)
+              )
+             )
+  
+  precip.details.df = rbind(precip.details.df,station)
+}
+
+# clean up the old stations dataframe
+rm(stations.df)
+
+precip.details.df
+```
+
+```{r define_access_fxns}
+stationName2stationId <- function(stationName) {
+  stationId <- (precip.details.df %>%
+                  filter(Station.Name == stationName) %>%
+                  select(Station.ID)
+               )[[1]]
+  return(stationId)
+}
+
+stationId2stationName <- function(stationId) {
+  stationName <- as.character(
+                   (precip.details.df %>%
+                      filter(Station.ID == stationId) %>%
+                      select(Station.Name)
+                   )[[1]]
+                 )
+  return(stationName)
+}
+
+stationLatLon2stationId <- function(lat,lng) {
+  stationId <- (precip.details.df %>%
+                  filter(latitude == lat,
+                         longitude == lng) %>%
+                  select(Station.ID)
+               )[[1]]
+  return(stationId)
+}
+
+stationId2stationLatLon <- function(stationId) {
+  stationLatLon <- (precip.details.df %>%
+                      filter(Station.ID == stationId) %>%
+                      select(latitude,longitude)
+                   )[,1:2]
+  return(stationLatLon)
+}
+
+stationId2precipdf <- function(stationId) {
+  precipdf <- (precip.details.df %>%
+                 filter(Station.ID == stationId) %>%
+                 select(data)
+              )[[1]]
+  return(precipdf)
+}
+
+popupContent <- function(stationId) {
+  s <- precip.details.df %>% filter(Station.ID == stationId)
+  content = paste(
+              "Station Name: ", htmlEscape(s$Station.Name), "<br>",
+              "Station ID: ", htmlEscape(s$Station.ID), "<br>",
+              "Latitude: ", htmlEscape(s$latitude), "<br>",
+              "Longitude: ", htmlEscape(s$longitude), "<br>"
+            )
+  return(content)
+}
+
+```
+
+```{r}
+station.id <- 120132
+
+```
+
+```{r}
+# create a Time/Precip dataframe for the selected marker
+# this will be used later to generate our plot
+data.station.df <- stationId2precipdf(station.id)
+data.station.df
+```
+
+```{r access_latlon} 
+# access latlon
+latlon <- stationId2stationLatLon(station.id)
+latlon
+```
+
+```{r}
+dygraph(as.data.frame(data.station.df), main="Station Data") %>%
+  dySeries(name="Precipitation", label="Precipitation") %>%
+  dyRangeSelector()
+
+```
+
+```{r}
+precip.details.df[3,"Station.ID"][[1]]
+```
+
+```{r}
+precip.details.df
+```
+
+```{r}
+precip.details.df %>% select(Station.ID,Station.Name,min,max,mean)
+```
+
+```{r}
+generate.colors.range <- function(values, nbreaks=10, palette.fxn=topo.colors)  {
+  # returns a dataframe with rows specifying the 
+  # lower and upper limit for each color. 
+  labs <- levels(cut(values,breaks=nbreaks))
+  bounds.levels <- data.frame(
+    lower = as.numeric( sub("\\((.+),.*", "\\1", labs) ),
+    upper = as.numeric( sub("[^,]*,([^]]*)\\]", "\\1", labs) ))
+  bounds.levels[['color']] <- palette.fxn(nbreaks)
+  return(bounds.levels)
+}
+
+generate.colors.range(precip.details.df$mean,10,topo.colors)
+```
+
+```{r}
+qpal = colorQuantile(topo.colors,precip.details.df$mean,10)
+qpal(0.24)
+```
+
+
+
+```{r}
+precip.details.df %>% mutate(color = qpal(mean))
+```
+
+
+
+```{r}
+qpal = colorQuantile("RdYlBu",precip.details.df$mean,10)
+precip.details.df <- precip.details.df %>% mutate(color = qpal(mean))
+colors.df <- data.frame(color = topo.colors(length(precip.details.df)), stringsAsFactors = FALSE)
+
+# generate our Leaflet based map output 
+leaflet() %>%
+  addTiles() %>%
+  addCircleMarkers(
+    data = precip.details.df,
+    label = ~Station.Name,
+    lng = ~longitude,
+    lat = ~latitude,
+    radius = 4,
+    fillOpacity = 0.8,
+    layerId = ~Station.ID,
+    color = ~color
+  )
+
+#%>%
+#  addLegend(pal = qpal, values = colors.df$color, opacity = 1)
+```
+
+
+
+
+ 
