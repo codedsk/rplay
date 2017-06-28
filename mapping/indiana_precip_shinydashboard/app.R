@@ -55,6 +55,11 @@ for (i in 1:length(precip.files)) {
 # remove the old stations dataframe
 rm(stations.df)
 
+# setup map marker colors
+
+qpal = colorQuantile("RdYlBu",precip.details.df$mean,10)
+precip.details.df <- precip.details.df %>%
+                       mutate(color = qpal(mean))
 
 # some helper functions that make finding data in
 # precip.details.df simple
@@ -121,12 +126,15 @@ popupContent <- function(stationId) {
 # Build the Shiny application user interface
 # using the shiny dashboard
 
-box.height = 500
+# if you change the box height, also change the hardcoded
+# dataTables_scrollBody height and map height below in the
+# custom CSS
+box.height = 450
 
 ui <- dashboardPage(
   
   dashboardHeader(
-    title = "Indiana Precipitation",
+    title = "Indiana Precipitation Explorer",
     titleWidth = 450
   ),
   
@@ -140,35 +148,21 @@ ui <- dashboardPage(
     tags$head(tags$style(HTML('
       .skin-blue .main-header .logo {
         background-color: #3c8dbc;
+        # text-align: left;
+        # font-size: 24px;
       }
       .skin-blue .main-header .logo:hover {
         background-color: #3c8dbc;
       }
-      #.main-header .logo {
-      #  font-size: 24px;
-      #}
+      .dataTables_scrollBody {
+        height: 250px !important;
+      }
+      #map {
+        height: 375px !important;
+      }
     '))),
     
     fluidRow(
-#      column(width = 6,
-#        box(title="Control",
-#            solidHeader=TRUE,
-#            width=NULL,
-#            selectInput("station_select", "Station:",
-#                        precip.details.df[,'Station.Name'])
-#        ),
-#        box(title="Station Details",
-#            solidHeader=TRUE,
-#            width=NULL,
-#            "Station Name: ", "XXXXXXXX", br(),
-#            "Data Record Time: ", "1948 to 2003", br(),
-#            "Precipitaion min: ", "0.0 cm", br(),
-#            "Precipitaion max: ", "6.2 cm", br(),
-#            "Precipitaion mean: ", "2.2 cm", br(),
-#            DT::dataTableOutput('tbl'),
-#            downloadButton("downloadData","Download Station Precipitation Data")
-#        )
-#      ),
 
       box(title="Station Details",
           solidHeader=FALSE,
@@ -188,7 +182,7 @@ ui <- dashboardPage(
     
     fluidRow(
       box(width=12,
-          height=box.height,
+#          height=box.height,
           dygraphOutput('plot.dygraph')
       )
     )
@@ -305,19 +299,22 @@ server <- function(input, output, session) {
     proxy %>% clearPopups()
   })
   
+
   # generate our Leaflet based map output 
   output$map <- renderLeaflet({
     leaflet() %>%
       addTiles() %>%
       addCircleMarkers(
-        data = precip.details.df %>% select(Station.ID,Station.Name,latitude,longitude),
+        data = precip.details.df %>% select(Station.ID,Station.Name,latitude,longitude,color),
         label = ~Station.Name,
         lng = ~longitude,
         lat = ~latitude,
         radius = 4,
         fillOpacity = 0.8,
-        layerId = ~Station.ID
-      )
+        layerId = ~Station.ID,
+        color = ~color
+      ) #%>%
+      #addLegend(pal = qpal, values = ~mean, opacity = 1)
   })
   
   # generate our DyGraph based xy curve
@@ -343,11 +340,10 @@ server <- function(input, output, session) {
     datatable(
       precip.details.df %>% select(Station.ID,Station.Name,min,max,mean),
       selection=list(mode="single",selected=c(1)),
-      extensions=c("Scroller"),
+      extensions=c("Scroller","Responsive"),
       style="bootstrap",
       class="compact",
       width="100%",
-      height="100%",
       options=list(
         deferRender=TRUE,
         scrollY=300,
