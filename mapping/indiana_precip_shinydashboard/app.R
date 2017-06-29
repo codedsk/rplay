@@ -15,8 +15,8 @@ precip.dir = file.path(data.dir,'indiana_precipitation')
 # read in location and description of the precip monitor stations
 # station.csv has duplicate entries in it (121739).
 stations.df <- read_csv( file.path(precip.dir,'station.csv.clean') ) %>%
-                  rename(Station.ID = `Station ID`) %>%
-                  rename(Station.Name = `Station Name`)
+                  rename(id = `Station ID`) %>%
+                  rename(name = `Station Name`)
 
 # read in the precipitation data
 precip.details.df = tibble()
@@ -38,7 +38,7 @@ for (i in 1:length(precip.files)) {
   # in a listcolumn so we can quickly grab it later by indexing by the
   # Station ID.
   station <- (stations.df %>%
-              filter(Station.ID == station.id) %>%
+              filter(id == station.id) %>%
               mutate(
                 min = min(df$Precipitation),
                 max = max(df$Precipitation),
@@ -56,8 +56,9 @@ for (i in 1:length(precip.files)) {
 rm(stations.df)
 
 # setup map marker colors
-
-qpal = colorQuantile("RdYlBu",precip.details.df$mean,10)
+# check out http://colorbrewer2.org/ for more palettes
+# "RdYlBu", "Blues", ...
+qpal = colorBin("YlOrRd",precip.details.df$mean,5)
 precip.details.df <- precip.details.df %>%
                        mutate(color = qpal(mean))
 
@@ -66,8 +67,8 @@ precip.details.df <- precip.details.df %>%
 
 stationName2stationId <- function(stationName) {
   stationId <- (precip.details.df %>%
-                  filter(Station.Name == stationName) %>%
-                  select(Station.ID)
+                  filter(name == stationName) %>%
+                  select(id)
                )[[1]]
   return(stationId)
 }
@@ -75,8 +76,8 @@ stationName2stationId <- function(stationName) {
 stationId2stationName <- function(stationId) {
   stationName <- as.character(
                    (precip.details.df %>%
-                      filter(Station.ID == stationId) %>%
-                      select(Station.Name)
+                      filter(id == stationId) %>%
+                      select(name)
                    )[[1]]
                  )
   return(stationName)
@@ -86,14 +87,14 @@ stationLatLon2stationId <- function(lat,lng) {
   stationId <- (precip.details.df %>%
                   filter(latitude == lat,
                          longitude == lng) %>%
-                  select(Station.ID)
+                  select(id)
                )[[1]]
   return(stationId)
 }
 
 stationId2stationLatLon <- function(stationId) {
   stationLatLon <- (precip.details.df %>%
-                      filter(Station.ID == stationId) %>%
+                      filter(id == stationId) %>%
                       select(latitude,longitude)
                    )[,1:2]
   return(stationLatLon)
@@ -101,22 +102,22 @@ stationId2stationLatLon <- function(stationId) {
 
 stationId2precipdf <- function(stationId) {
   precipdf <- (precip.details.df %>%
-                 filter(Station.ID == stationId) %>%
+                 filter(id == stationId) %>%
                  select(data)
               )[[1]]
   return(precipdf)
 }
 
 rowNumber2stationId <- function(rownum) {
-  stationId <- precip.details.df[rownum,"Station.ID"][[1]]
+  stationId <- precip.details.df[rownum,"id"][[1]]
   return(stationId)
 }
 
 popupContent <- function(stationId) {
-  s <- precip.details.df %>% filter(Station.ID == stationId)
+  s <- precip.details.df %>% filter(id == stationId)
   content = paste(
-              "Station Name: ", htmlEscape(s$Station.Name), "<br>",
-              "Station ID: ", htmlEscape(s$Station.ID), "<br>" #,
+              "Station Name: ", htmlEscape(s$name), "<br>",
+              "Station ID: ", htmlEscape(s$id), "<br>" #,
 #              "Latitude: ", htmlEscape(s$latitude), "<br>",
 #              "Longitude: ", htmlEscape(s$longitude), "<br>"
             )
@@ -227,7 +228,7 @@ server <- function(input, output, session) {
     # update the datatable widget with the selected station id
     # only handles single row selection
     if (!is.null(stationId)) {
-      indicies = which(precip.details.df$Station.ID == stationId)
+      indicies = which(precip.details.df$id == stationId)
       if (!(indicies %in% input$tbl_rows_selected)) {
         indicies <- switch(as.character(length(indicies)),
                            "0" = NULL,
@@ -302,19 +303,37 @@ server <- function(input, output, session) {
 
   # generate our Leaflet based map output 
   output$map <- renderLeaflet({
-    leaflet() %>%
+    leaflet(precip.details.df %>% select(-data)) %>%
       addTiles() %>%
       addCircleMarkers(
-        data = precip.details.df %>% select(Station.ID,Station.Name,latitude,longitude,color),
-        label = ~Station.Name,
+        lng = ~longitude,
+        lat = ~latitude,
+        radius = 5,
+        fill = FALSE,
+        layerId = ~id,
+        color = "#000000",
+        opacity=1,
+        weight = 3
+      ) %>%
+      addCircleMarkers(
+        label = ~name,
         lng = ~longitude,
         lat = ~latitude,
         radius = 4,
         fillOpacity = 0.8,
-        layerId = ~Station.ID,
-        color = ~color
-      ) #%>%
-      #addLegend(pal = qpal, values = ~mean, opacity = 1)
+        layerId = ~id,
+        color = ~color,
+        opacity = 1,
+        weight = 3
+      ) %>%
+      addLegend(
+        "bottomright",
+        pal = qpal,
+        values = ~mean,
+        title = "Mean Daily<br>Precipitation",
+        opacity = 1,
+        labFormat = labelFormat(suffix="in")
+      )
   })
   
   # generate our DyGraph based xy curve
@@ -326,8 +345,11 @@ server <- function(input, output, session) {
 
     station.name = stationId2stationName(data$station.id)
     graph.title = paste(station.name," Station Data")
-    dygraph(as.data.frame(data$station.df), main=graph.title) %>%
-      dySeries(name="Precipitation", label="Precipitation") %>%
+    dygraph(as.data.frame(data$station.df), main = graph.title) %>%
+      dyAxis("x", label = "Year") %>%
+      dyAxis("y", label = "Precipitation (inches)") %>%
+      dySeries(name="Precipitation", label="Precipitation (in)") %>%
+      dyLegend(show = "always", hideOnMouseOut = FALSE) %>%
       dyRangeSelector()
   })
   
@@ -336,14 +358,15 @@ server <- function(input, output, session) {
   output$tbl <- DT::renderDataTable({
     #hideCols = list(3,4,8)
     hideCols = list()
-
+    
     datatable(
-      precip.details.df %>% select(Station.ID,Station.Name,min,max,mean),
-      selection=list(mode="single",selected=c(1)),
-      extensions=c("Scroller","Responsive"),
-      style="bootstrap",
-      class="compact",
-      width="100%",
+      precip.details.df %>% select(id,name,min,max,mean),
+      selection = list(mode="single",selected=c(3)),
+      extensions = c("Scroller","Responsive"),
+      style = "bootstrap",
+      class = "compact",
+      width = "100%",
+      colnames = c("StationId", "StationName", "Min", "Max", "Mean"),
       options=list(
         deferRender=TRUE,
         scrollY=300,
