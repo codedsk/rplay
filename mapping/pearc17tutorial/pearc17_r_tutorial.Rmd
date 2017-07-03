@@ -1,0 +1,313 @@
+---
+title: "Updating the Indiana Precipitation Explorer"
+output: html_notebook
+---
+
+<style>
+.html-widget {
+  margin: 0 auto;
+}
+</style>
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(fig.align='center')
+
+# load in required libraries
+library(dplyr)
+library(magrittr)
+library(tibble)
+library(readr)
+library(leaflet)
+```
+
+Before we get started, we need to read and parse the CSV files that hold the precipitation data. The data files are located on MyGeoHUB in ```/data/tools/incip/indiana_precipitation``` and we can setup the variable *precip.dir* to hold this directory path
+
+```{r data_directory}
+# setup the directory where the precipitation data lives
+base.dir = '..'
+data.dir = file.path(base.dir,'data')
+#data.dir = "/data/tools/incip"
+precip.dir = file.path(data.dir,'indiana_precipitation')
+```
+
+The directory holds a file named *stations.csv.clean* with the id, name, latitude, and longitude for each station. 
+
+```{r read_station_attributes, message=FALSE}
+# read in location and description of the precip monitor stations
+# station.csv has duplicate entries in it (121739), so we use a
+# clean version of the file, station.csv.clean, where the station ids
+# are unique.
+
+# YOUR TURN:
+# Set the 'stations.fn' variable below to "station.csv.clean"
+stations.fn = "station.csv.clean"
+
+stations.df <- read_csv( file.path(precip.dir,stations.fn) ) %>%
+                  rename(id = `Station ID`) %>%
+                  rename(name = `Station Name`)
+```
+
+The CSV file is read into a data structure called a Data Frame. You can think of a Data Frames as a table that you can query. The dplyr library has a number of functions, like ```filter```, ```mutate```, and ```select```,  that are helpful for querying and manipulating information in data frames.
+
+The *stations.df* data frame looks like this:
+
+```{r show_stations_df, echo=FALSE}
+stations.df
+```
+
+Along with the stations.csv.clean file, the *precip.dir* directory holds the precipitation data files for each station. The data files have two columns, Time and Precipitation. The Next few lines can be used to read in the precipitation data files and merge it with information about the monitoring station like the id, name, latitude and longitude.
+
+
+```{r aggregate_station_data, message=FALSE}
+# read in the precipitation data
+precip.details.df = tibble()
+precip.files = list.files(path=precip.dir,pattern="hr.*.csv")
+
+for (i in 1:length(precip.files)) {
+  # get the station id from the file path
+  matches = gregexpr("[0-9]+",precip.files[i])
+  
+  station.id = as.integer(regmatches(precip.files[i],matches)[[1]])
+  
+  # get a precipitation file path
+  precip.filepath = file.path(precip.dir,precip.files[i])
+  
+  # read the precipitation data into a dataframe
+  df = read_csv(precip.filepath)
+
+  # create a row with StationID, StationName, lat, lon information from
+  # stations.df. Store the precipitation dataframe in a list-column so we
+  # can quickly grab it later by indexing by the Station ID.
+  station.row <- stations.df %>%
+                   filter(id == station.id) %>%
+                   mutate(data = list(df))
+
+  # build up a new tibble, row by row, that links station information
+  # with the precipitation dataframe.
+  precip.details.df = rbind(precip.details.df,station.row)
+}
+```
+
+Our new data frame, *precip.details.df* holds station information and precipitation data in a single location. If we take a look at it, we see that the precipitation data is stored in a column named *data* with a type list, but we can index into the list to access the Time and Precipitation columns of the data frame. This is what *precip.details.df* looks like:
+
+```{r show_merged_dataframe, echo=FALSE}
+precip.details.df
+```
+
+The monitor station information comes with longitude and latitude coordinates for each sation. Let's see what the monitor station locations look like when plotted on a map. We can use the R's Leaflet library to setup a view of the state of Indiana and place blue colored markers at the location of each monitor station.
+
+```{r plot_station_locations, echo=FALSE}
+leaflet(precip.details.df %>% select(-data)) %>%
+  addTiles() %>%
+  addCircleMarkers(
+    label = ~name,
+    lng = ~longitude,
+    lat = ~latitude,
+    radius = 4,
+    opacity = 1,
+    fillOpacity = 1,
+    weight = 1
+  )
+```
+
+Seeing the locations of each monitor station only tells half the story. We are interested in finding out if there are trends in precipitation amounts across the state. Since we have the precipitation data for each monitor station, we can find the average hourly precipitation over the years the data was collected. Then we can color each marker based on this average to help us visually compare the the precipitation around the state.
+
+Let's start by updating our data frame, *precip.details.df*, with the mean precipitation for each station. Here is a reminder of what the data frame looks like:
+
+```{r echo=FALSE}
+precip.details.df
+```
+
+Below, we calculate the mean of the precipitation values held in the *data* column. After running this code chunk, use the right arrow button (near the column names) to scroll to see the mean column.
+
+
+```{r calculate_precipitaion_means}
+precip.details.df %<>%
+  group_by(id) %>%
+  mutate(mean = mean(data[[1]][2]$Precipitation)) %>%
+  ungroup()
+
+precip.details.df
+```
+
+```{r}
+#precip.details.df %>%
+#  rowwise() %>%
+#  mutate(mean = mean(p.data$Precipitation)) %>%
+#  ungroup()
+#
+#precip.details.df
+```
+
+A convenient way of displaying the mean precipitation data on the map is to color the markers based on a range of precipitation values. This allows users to visually inspect the map and estimate which stations may have a higher or lower mean precipitation. Let's use the *colorBin()* function to group the mean values into five equal sized bins and assign a color to each bin. The *colorBin()* function accepts a color palette, a list of values, and the number of bins to group values into and returns a function, qpal, that can be called used to query the bin (color) a value falls into.
+
+For example, in the code below, we create a queryable palette, named *qpal*, by specifying a color palette ("Blues"), the domain or range of our values (values), and the number of bins we want the values to fall within (nbins):
+
+```{r palette_binning_example}
+palette = "Blues"
+values = runif(10,min=0,max=1)
+nbins = 5
+
+qpal = colorBin(palette,values,nbins)
+```
+
+Above, we used random numbers for our *values* variable. Let's see what color bins they end up falling into:
+
+```{r}
+previewColors(qpal,sort(values))
+```
+<br>
+Now it's your turn to create a queryable palette for our map markers. Use the colorBin() function to generate a palette for our precipitation means. Below, choose a color palette, specify the domain for our precipication mean values and set the number of bins the values can fall into.
+
+```{r calculate_color_from_mean}
+# YOUR TURN:
+# On the next line, try setting palette to one of the following:
+#   "RdYlBu"
+#   "Blues"
+#   "YlOrRd"
+# check out http://colorbrewer2.org/ for more palettes
+# I like "YlOrRd"
+palette = "YlOrRd"
+
+# YOUR TURN:
+# Set the domain of values to the mean column in our data frame:
+#   precip.details.df$mean
+values = precip.details.df$mean
+
+# YOUR TURN:
+# Choose the number of bins. A good choice is an integer between 2 and 7
+# I like 5
+nbins = 5
+
+# Create a palette we can query for which bin a value falls into.
+qpal = colorBin(palette,values,nbins)
+
+# Add a column named 'color' to our data frame. It holds
+# the bin each station's mean precipitation falls into.
+precip.details.df %<>%
+  mutate(color = qpal(mean))
+```
+
+Great! Our updated data frame now has a column named 'color', which describes which bin the mean precipitation value falls into. Let's have a look:
+
+```{r show_color_column, echo=FALSE}
+# print out the data frame
+precip.details.df
+```
+
+
+```{r create_map_object}
+# Create a new map, all of the data we will use in the map
+# will come from the 'precip.details.df' data frame
+map <- leaflet(precip.details.df %>% select(-data)) %>%
+        addTiles()
+
+map
+```
+
+Use the *addCircleMarkers()* function to place circle markers on the map at the locations of the monitoring stations. Add the following argument to the *addCircleMarkers()* function to tell the map to color the markers using color column we generated earlier using our custom color palette and bins:
+
+```color = ~color```
+
+```{r plot_station_locations_with_colors}
+map %>%
+  # create the binned color marker
+  addCircleMarkers(
+    label = ~name,
+    lng = ~longitude,
+    lat = ~latitude,
+    radius = 4,
+    opacity = 1,
+    fillOpacity = 1,
+    # YOUR TURN:
+    # On the next line, add the argument: color = ~color
+    color = ~color,
+    weight = 1
+  )
+```
+
+
+The markers now show another dimension of information from our data frame, the binned mean precipitation. If you used the 'YlOrRd' palette, you may notice that some of the markers are a little hard to see. For example, the light yellow marker in the north central part of Indiana, near the city of South Bend, almost blends in with base map background. One easy way to solve this problem is to place a slightly larger black marker behind the marker displaying our bin color. This will give the effect of the marker having a border, helping to distinguish it from other artifacts on the map.
+
+In the code below, we create two types of markers on the map. The first marker is a black marker that will act as a border. The second marker sits on top of the black marker and shows the binned color for the mean precipitation value.
+
+For the first marker,
+
+1. Set *addCircleMarkers()*'s color argument to "#000000", the hexadecimal value for the HTML color representing black.
+2. Set the line width (weight) to 3, a value slightly larger than that of the second marker.
+
+```{r add_black_background_marker}
+map %<>%
+  # create the black border marker
+  addCircleMarkers(
+    lng = ~longitude,
+    lat = ~latitude,
+    radius = 4,
+    opacity=1,
+    fillOpacity = 0,
+    # YOUR TURN:
+    # 1. Set the color argument to "#000000"
+    color = "#000000",
+    # YOUR TURN:
+    # 2. Set the weight argument to 3
+    weight = 3
+  ) %>%
+  # create the bin color marker
+  addCircleMarkers(
+    label = ~name,
+    lng = ~longitude,
+    lat = ~latitude,
+    radius = 4,
+    opacity = 1,
+    fillOpacity = 1,
+    color = ~color,
+    weight = 1
+  )
+
+map
+```
+
+
+The black border around the colored marker helps users distinguish them from a similarly colored background. The map is missing one more item. No map is complete without a legend and it is especially important in this case. Having the colored markers on the map looks nice, but without the legend, users don't know what the colors mean.
+
+We'll use the *addLegend()* function to add a legend to the map. 
+
+
+```{r}
+map %<>% 
+  addLegend(
+    "bottomright",
+    title = "Mean Daily<br>Precipitation",
+    opacity = 1,
+    labFormat = labelFormat(suffix="in"),
+    # YOUR TURN:
+    # Set the pal argument to our custom binned palette function, qpal
+    pal = qpal,
+    # YOUR TURN:
+    # Set the values argument to the mean precipitation values, ~mean
+    values = ~mean
+  )
+
+map
+```
+
+
+Visually inspect the map. Can you tell which station looks like it has the highest mean daily precipitation?
+
+We can use the data frame to confirm our suspicion.
+
+```{r}
+precip.details.df %>%
+  filter(mean == max(mean)) %>%
+  select(name,mean)
+```
+
+```{r, include=FALSE}
+highmean.station.name <- precip.details.df %>%
+                           filter(mean == max(mean)) %>%
+                           select(name) %>%
+                           .[[1]]
+```
+
+Did you pick the `r highmean.station.name` station?
