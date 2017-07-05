@@ -1,13 +1,15 @@
 ---
-title: "Updating the Indiana Precipitation Explorer"
+title: "Exploring Precipitation Across Indiana"
 output: html_notebook
 ---
-
+<!-- center maps horizontally on the page -->
 <style>
 .html-widget {
   margin: 0 auto;
 }
 </style>
+
+
 
 ```{r setup, include=FALSE}
 
@@ -131,14 +133,6 @@ precip.details.df %<>%
 precip.details.df
 ```
 
-```{r}
-#precip.details.df %>%
-#  rowwise() %>%
-#  mutate(mean = mean(p.data$Precipitation)) %>%
-#  ungroup()
-#
-#precip.details.df
-```
 
 A convenient way of displaying the mean precipitation data on the map is to color the markers based on a range of precipitation values. This allows users to visually inspect the map and estimate which stations may have a higher or lower mean precipitation. Let's use the *colorBin()* function to group the mean values into five equal sized bins and assign a color to each bin. The *colorBin()* function accepts a color palette, a list of values, and the number of bins to group values into and returns a function, qpal, that can be called used to query the bin (color) a value falls into.
 
