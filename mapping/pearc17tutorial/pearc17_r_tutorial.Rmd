@@ -1,6 +1,9 @@
 ---
 title: "Exploring Precipitation Across Indiana"
-output: html_notebook
+runtime: shiny
+output:
+  html_document: default
+  html_notebook: default
 ---
 <!-- center maps horizontally on the page -->
 <style>
@@ -272,7 +275,13 @@ We'll use the *addLegend()* function to add a legend to the map.
 map %<>% 
   addLegend(
     "bottomright",
-    title = "Mean Daily<br>Precipitation",
+    title = "<center>Mean Daily<br>
+             Precipitation<br/>
+             <small>
+               for days with<br/>
+               measurable<br/>
+               precipitation
+             </small></center>",
     opacity = 1,
     labFormat = labelFormat(suffix="in"),
     # YOUR TURN:
