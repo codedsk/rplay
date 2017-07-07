@@ -1,0 +1,212 @@
+---
+title: Exploring Indiana Precipitation
+output:
+  flexdashboard::flex_dashboard:
+    orientation: rows
+---
+
+```{r setup, include=FALSE}
+
+# load in required libraries
+library(dplyr)
+library(magrittr)
+library(tibble)
+library(readr)
+library(leaflet)
+library(DT)
+
+
+# setup the directory where the precipitation data lives
+data.dir = "/data/tools/incip"
+precip.dir = file.path(data.dir,'indiana_precipitation')
+
+
+# read in location and description of the precip monitor stations
+stations.fn = "station.csv.clean"
+
+stations.df <- read_csv( file.path(precip.dir,stations.fn) ) %>%
+                  rename(id = `Station ID`) %>%
+                  rename(name = `Station Name`)
+
+# read in the precipitation data
+precip.details.df = tibble()
+precip.files = list.files(path=precip.dir,pattern="hr.*.csv")
+
+for (i in 1:length(precip.files)) {
+  # get the station id from the file path
+  matches = gregexpr("[0-9]+",precip.files[i])
+
+  station.id = as.integer(regmatches(precip.files[i],matches)[[1]])
+
+  # get a precipitation file path
+  precip.filepath = file.path(precip.dir,precip.files[i])
+
+  # read the precipitation data into a dataframe
+  df = read_csv(precip.filepath)
+
+  # create a row with StationID, StationName, lat, lon information from
+  # stations.df. Store the precipitation dataframe in a list-column so we
+  # can quickly grab it later by indexing by the Station ID.
+  station.row <- stations.df %>%
+                   filter(id == station.id) %>%
+                   mutate(data = list(df))
+
+  # build up a new tibble, row by row, that links station information
+  # with the precipitation dataframe.
+  precip.details.df = rbind(precip.details.df,station.row)
+}
+```
+
+
+Row
+-------------------------------------
+
+### Step #1 - Precipitation Monitor Stations
+
+```{r create_map_object}
+# Create a new map, all of the data we will use in the map
+# will come from the 'precip.details.df' data frame
+
+leaflet(precip.details.df %>% select(-data)) %>%
+  addTiles() %>%
+  addCircleMarkers(
+    label = ~name,
+    lng = ~longitude,
+    lat = ~latitude,
+    radius = 4,
+    opacity = 1,
+    fillOpacity = 1,
+    weight = 1
+  )
+```
+
+### Step #2 - Calculating the Means for Daily Prepitation
+
+```{r calculate_precipitaion_means}
+precip.details.df %<>%
+  group_by(id) %>%
+  mutate(mean = mean(data[[1]][2]$Precipitation)) %>%
+  ungroup()
+
+#precip.details.df %>% select(-data,-longitude,-latitude)
+```
+
+
+```{r calculate_color_from_mean}
+# YOUR TURN:
+# On the next line, try setting palette to one of the following:
+#   "RdYlBu"
+#   "Blues"
+#   "YlOrRd"
+# check out http://colorbrewer2.org/ for more palettes
+# I like "YlOrRd"
+palette = ""
+
+# YOUR TURN:
+# Above, we stored the mean values we calculated in a column
+# in the precip.details.df data frame. On the next line, set
+# the values variable to our list of mean values. You can
+# utilize the '$' notation to access the column named 'mean'
+# in the precip.details.df data frame. Set the variable below to:
+#   precip.details.df$mean
+values =
+
+# YOUR TURN:
+# Choose the number of bins. A good choice is an integer between 2 and 7
+# I like 5
+nbins = 0
+
+# Create a palette we can query for which bin a value falls into.
+qpal = colorBin(palette,values,nbins)
+
+# Add a column named 'color' to our data frame. It holds
+# the bin each station's mean precipitation falls into.
+precip.details.df %<>%
+  mutate(color = qpal(mean))
+
+#precip.details.df %>% select(-data,-longitude,-latitude)
+```
+
+
+```{r plot_station_locations_with_colors}
+map <- leaflet(precip.details.df %>% select(-data)) %>%
+        addTiles()
+
+map %>%
+  # create the binned color marker
+  addCircleMarkers(
+    label = ~name,
+    lng = ~longitude,
+    lat = ~latitude,
+    radius = 4,
+    opacity = 1,
+    fillOpacity = 1,
+    # YOUR TURN:
+    # On the next line, add the argument: color = ~color,
+    color = ,
+    weight = 1
+  )
+```
+
+
+Row
+-------------------------------------
+
+### Step #3 - Add a border to the markers
+
+```{r add_black_background_marker}
+map %<>%
+  # create the black border marker
+  addCircleMarkers(
+    lng = ~longitude,
+    lat = ~latitude,
+    radius = 4,
+    opacity=1,
+    fillOpacity = 0,
+    # YOUR TURN:
+    # 1. Set the color argument to "#000000"
+    color = "#FFFFFF",
+    # YOUR TURN:
+    # 2. Set the weight argument to 3
+    weight = 1
+  ) %>%
+  # create the bin color marker
+  addCircleMarkers(
+    label = ~name,
+    lng = ~longitude,
+    lat = ~latitude,
+    radius = 4,
+    opacity = 1,
+    fillOpacity = 1,
+    color = ~color,
+    weight = 1
+  )
+
+map
+```
+
+### Step #4 - Add a legend to the map
+
+```{r}
+map %<>%
+  addLegend(
+    "bottomright",
+    title = "<center>Mean Daily<br>
+             Precipitation<br/>
+             <small>
+               for days with<br/>
+               measurable<br/>
+               precipitation
+             </small></center>",
+    opacity = 1,
+    labFormat = labelFormat(suffix="in"),
+    # YOUR TURN:
+    # Set the pal argument to our custom binned palette function, qpal
+    pal = ,
+    # YOUR TURN:
+    # Set the values argument to the mean precipitation values, ~mean
+    values =
+  )
+
+map
+```
