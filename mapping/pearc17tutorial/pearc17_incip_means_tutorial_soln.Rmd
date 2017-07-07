@@ -1,5 +1,5 @@
 ---
-title: Exploring Indiana Precipitation
+title: Exploring Precipitation Across Indiana
 output:
   flexdashboard::flex_dashboard:
     orientation: rows
@@ -29,6 +29,10 @@ stations.df <- read_csv( file.path(precip.dir,stations.fn) ) %>%
                   rename(name = `Station Name`)
 
 # read in the precipitation data
+# we will eventually store the data from the files into
+# a tibble (a data frame like object) named precip.details.df.
+# the variable precip.files holds the names of all of the
+# csv data files we need to process.
 precip.details.df = tibble()
 precip.files = list.files(path=precip.dir,pattern="hr.*.csv")
 
@@ -41,7 +45,7 @@ for (i in 1:length(precip.files)) {
   # get a precipitation file path
   precip.filepath = file.path(precip.dir,precip.files[i])
 
-  # read the precipitation data into a dataframe
+  # read the precipitation data into a data frame
   df = read_csv(precip.filepath)
 
   # create a row with StationID, StationName, lat, lon information from
@@ -80,7 +84,7 @@ leaflet(precip.details.df %>% select(-data)) %>%
   )
 ```
 
-### Step #2 - Calculating the Means for Daily Prepitation
+### Step #2 - Calculating the Means for Hourly Precipitation
 
 ```{r calculate_precipitaion_means}
 precip.details.df %<>%
@@ -100,7 +104,7 @@ precip.details.df %<>%
 #   "YlOrRd"
 # check out http://colorbrewer2.org/ for more palettes
 # I like "YlOrRd"
-palette = ""
+palette = "YlOrRd"
 
 # YOUR TURN:
 # Above, we stored the mean values we calculated in a column
@@ -109,12 +113,12 @@ palette = ""
 # utilize the '$' notation to access the column named 'mean'
 # in the precip.details.df data frame. Set the variable below to:
 #   precip.details.df$mean
-values =
+values = precip.details.df$mean
 
 # YOUR TURN:
 # Choose the number of bins. A good choice is an integer between 2 and 7
 # I like 5
-nbins = 0
+nbins = 5
 
 # Create a palette we can query for which bin a value falls into.
 qpal = colorBin(palette,values,nbins)
@@ -143,7 +147,7 @@ map %>%
     fillOpacity = 1,
     # YOUR TURN:
     # On the next line, add the argument: color = ~color,
-    color = ,
+    color = ~color,
     weight = 1
   )
 ```
@@ -165,10 +169,10 @@ map %<>%
     fillOpacity = 0,
     # YOUR TURN:
     # 1. Set the color argument to "#000000"
-    color = "#FFFFFF",
+    color = "#000000",
     # YOUR TURN:
     # 2. Set the weight argument to 3
-    weight = 1
+    weight = 3
   ) %>%
   # create the bin color marker
   addCircleMarkers(
@@ -187,14 +191,14 @@ map
 
 ### Step #4 - Add a legend to the map
 
-```{r}
+```{r add_legend_to_map}
 map %<>%
   addLegend(
     "bottomright",
-    title = "<center>Mean Daily<br>
+    title = "<center>Mean Hourly<br>
              Precipitation<br/>
              <small>
-               for days with<br/>
+               for hours with<br/>
                measurable<br/>
                precipitation
              </small></center>",
@@ -202,10 +206,10 @@ map %<>%
     labFormat = labelFormat(suffix="in"),
     # YOUR TURN:
     # Set the pal argument to our custom binned palette function, qpal
-    pal = ,
+    pal = qpal,
     # YOUR TURN:
     # Set the values argument to the mean precipitation values, ~mean
-    values =
+    values = ~mean
   )
 
 map
