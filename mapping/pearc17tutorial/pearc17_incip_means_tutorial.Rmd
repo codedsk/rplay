@@ -13,13 +13,11 @@ library(magrittr)
 library(tibble)
 library(readr)
 library(leaflet)
-library(DT)
 
 
 # setup the directory where the precipitation data lives
 data.dir = "/data/tools/incip"
 precip.dir = file.path(data.dir,'indiana_precipitation')
-
 
 # read in location and description of the precip monitor stations
 stations.fn = "station.csv.clean"
@@ -111,7 +109,9 @@ palette = ""
 # in the precip.details.df data frame. On the next line, set
 # the values variable to our list of mean values. You can
 # utilize the '$' notation to access the column named 'mean'
-# in the precip.details.df data frame. Set the variable below to:
+# in the precip.details.df data frame.
+#
+# Set the variable below to:
 #   precip.details.df$mean
 values =
 
