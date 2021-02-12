@@ -1,0 +1,100 @@
+---
+title: "mtcars in a PostgresSQL Database"
+output: html_notebook
+---
+
+This needs the following packages installed:
+```{r}
+install.packages(c(
+  "DBI",
+  "RPostgres",
+  "dplyr",
+  "dbplyr",
+  "ggplot2",
+  "knitr",
+  "rmarkdown"
+))
+```
+
+```{r}
+library(DBI)
+library(dplyr)
+library(ggplot2)
+```
+
+launch the postgres database in a docker container:
+```{bash}
+docker-compose up -d
+```
+
+# TODO: look into https://serverfault.com/a/935674 for code that checks if container is up
+
+make a connection to the database
+```{r}
+con <- dbConnect(
+    RPostgres::Postgres(),
+    dbname = "examples",
+    host = "localhost",
+    port = 5432,
+    password = "postgres",
+    user = "postgres"
+)
+```
+
+copy the mtcars data to the database
+details from: https://www.datacareer.de/blog/connect-to-postgresql-with-r-a-step-by-step-example/
+```{r}
+data('mtcars')
+mtcars.df <- data.frame(carname = rownames(mtcars), mtcars, row.names = NULL)
+mtcars.df$carname <- as.character(mtcars.df$carname)
+copy_to(con, mtcars.df, name="mtcars", temporary=FALSE, overwrite=TRUE)
+```
+
+use `dbplyr` to lazily retrieve data:
+notes from: https://dbplyr.tidyverse.org/
+```{r}
+mtcars2 <-tbl(con,"mtcars")
+mtcars2
+```
+
+make a plot using data from the database:
+notes from: http://michaeltoth.me/a-detailed-guide-to-the-ggplot-scatter-plot-in-r.html
+```{r}
+ggplot(mtcars2) +
+  geom_point(aes(x=wt, y=mpg))
+```
+
+make a query to the database:
+notes from: https://dbplyr.tidyverse.org/
+
+```{r}
+mtcars3 <- mtcars2 %>%
+  filter(wt >= 3, wt <= 4)
+```
+
+show the sql query that would be executed:
+```{r}
+mtcars3 %>% show_query()
+```
+
+execute the query, i dont think this is necessary to make the following plot
+```{r}
+mtcars3 %>% collect()
+```
+
+plot the subset of mtcars
+```{r}
+ggplot(mtcars3) +
+  geom_point(aes(x=wt, y=mpg))
+```
+
+disconnect
+```{r}
+dbDisconnect(con)
+```
+
+shut down the docker container:
+```{bash}
+docker-compose down
+docker volume rm bank_example_pg_data
+```
