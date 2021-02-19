@@ -1,0 +1,113 @@
+---
+title: "mtcars in a SQLite Database"
+output: html_notebook
+---
+
+This needs the following packages installed:
+```{r install-packages}
+install.packages(c(
+  "DBI",
+  "RSQLite",
+  "dplyr",
+  "dbplyr",
+  "ggplot2",
+  "knitr",
+  "rmarkdown"
+))
+```
+
+```{r load-packages}
+library(DBI)
+library(dplyr)
+library(ggplot2)
+```
+
+For this example, we will use an "in-memory" database:
+```{r create-in-memory-database}
+con <- dbConnect(RSQLite::SQLite(), ":memory:")
+```
+
+One way to copy the mtcars data to the database is by using the `copy_to()` function.
+With this code, we add an extra column with the names of the cars.
+```{r write-dataframe-to-database}
+data('mtcars')
+mtcars.df <- data.frame(carname = rownames(mtcars), mtcars, row.names = NULL)
+mtcars.df$carname <- as.character(mtcars.df$carname)
+copy_to(con, mtcars.df, name="mtcars", temporary=FALSE, overwrite=TRUE)
+```
+
+Or you can use the more traditional r-dbi function `dbWriteTable()`.
+This method doesn't include the column with the car names.
+```{r another-way-write-dataframe-to-database}
+dbWriteTable(con, "mtcars-without-names", mtcars)
+dbListTables(con)
+```
+
+use `dbplyr` to lazily retrieve data:
+```{r retrieve-data-with-dbplyr}
+mtcars2 <- tbl(con, "mtcars")
+mtcars2
+```
+
+make a plot using data from the database:
+```{r plot-data-from-database}
+ggplot(mtcars2) +
+  geom_point(aes(x=wt, y=mpg))
+```
+
+Make a query to the database using dbplyr:
+```{r query-database-with-dbplyr}
+mtcars3 <- mtcars2 %>%
+  filter(wt >= 3, wt <= 4)
+```
+
+show the sql query that would be executed:
+```{r show-dbplyr-query-as-sql}
+mtcars3 %>% show_query()
+```
+
+execute the query
+```{r execute_dbplyr_query}
+mtcars3 %>% collect()
+```
+
+plot the subset of mtcars between 3 and 4 (inclusive)
+```{r plot-mtcars-between-3-and-4}
+ggplot(mtcars3) +
+  geom_point(aes(x=wt, y=mpg))
+```
+
+Make a query to the database using SQL. Since our dataset is small, we can use the [dbGetQuery()](https://dbi.r-dbi.org/reference/dbgetquery) function to send the query to the database, retrieve the results, then clean the result set, all in a single command:
+```{r query-database-with-sql-small-dataset}
+mtcars4 <- dbGetQuery(con, "SELECT * FROM `mtcars` WHERE ((`wt` >= 2) AND (`wt` <= 3))")
+mtcars4
+```
+
+
+plot the subset of mtcars between 2 and 3 (inclusive)
+```{r plot-mtcars-between-2-and-3}
+ggplot(mtcars4) +
+  geom_point(aes(x=wt, y=mpg))
+```
+
+If the dataset is larger, we should switch the the [dbSendQuery()](https://dbi.r-dbi.org/reference/dbsendquery), [dbFetch()](https://dbi.r-dbi.org/reference/dbfetch), and [dbClearResult()](https://dbi.r-dbi.org/reference/dbclearresult) functions to execute the query, retrieve the results, and clear the result set. The `dbFetch()` function takes a parameter, `n`, that allows you to control the number of results that are returned.
+
+```{r query-database-with-sql-large-dataset}
+res <- dbSendQuery(con, "SELECT * FROM `mtcars` WHERE ((`wt` >= 2) AND (`wt` <= 3))")
+mtcars5 <- dbFetch(res, n=8)
+dbClearResult(res)
+mtcars5
+```
+
+
+disconnect the database connection:
+```{r}
+dbDisconnect(con)
+```
+
+Helpful websites:
+1. [RSQLite Documentation](https://rsqlite.r-dbi.org/)
+2. [Writing a dataframe to a database](https://www.datacareer.de/blog/connect-to-postgresql-with-r-a-step-by-step-example/)
+3. [dbplyr Documentation](https://dbplyr.tidyverse.org)
+4. [Make a ggplot2 plot](http://michaeltoth.me/a-detailed-guide-to-the-ggplot-scatter-plot-in-r.html)
+5. [DBI Tutorial](https://dbi.r-dbi.org/articles/dbi)
