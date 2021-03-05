@@ -1,0 +1,195 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This needs the following packages installed:
+```{r}
+install.packages(c(
+  "DBI",
+  "RPostgres",
+  "dplyr",
+  "dbplyr",
+  "ggplot2",
+  "knitr",
+  "purrr",
+  "rmarkdown",
+  "stringr",
+  "tibble",
+  "glue"
+))
+```
+
+```{r, results='hide', warning=FALSE}
+library(DBI)
+library(dplyr)
+library(ggplot2)
+library(tibble)
+library(glue)
+library(stringr)
+library(purrr)
+```
+
+launch the postgres database in a docker container:
+```{bash}
+docker-compose up -d
+```
+
+# TODO: look into https://serverfault.com/a/935674 for code that checks if container is up
+
+make a connection to the database
+```{r}
+con <- dbConnect(
+    RPostgres::Postgres(),
+    dbname = "spirographs",
+    host = "localhost",
+    port = 5432,
+    password = "postgres",
+    user = "postgres"
+)
+```
+
+create the database
+```{sql create-db-with-xy-cols-as-int-arrays, connection=con}
+CREATE TABLE cached_runs_2 ( 
+  n1 integer,
+  n2 integer,
+  n3 integer,
+  x integer[], 
+  y integer[]
+)
+```
+
+```{r spiro-without-db}
+spiro_without_db <- function(n1,n2,n3) {
+  # calculate the new spirograph points
+  t <- seq(0,1,length.out=1000)
+  z <- exp(1i*2*pi*n1*t) + exp(1i*2*pi*n2*t) + exp(1i*2*pi*n3*t)
+  result <- tibble(x=Re(z),y=Im(z))
+  return (result)
+}
+```
+
+add a run to the db.
+1. use the array syntax described in [documentation section 8.15.2](https://www.postgresql.org/docs/current/arrays.html#ARRAYS-INPUT).
+2. use `glue_sql()` to properly quote the sql statement. note that we change `glue`'s default open and close markers from `{` and `}` to `<<` and `>>` so we can use the curly brackets in the sql statement to signify an array input.
+3. use the `*` to [join the list elements with commas](https://glue.tidyverse.org/reference/glue_sql.html)
+```{r save-run-to-db}
+n1 <- 0
+n2 <- 0
+n3 <- 0
+r <- spiro_without_db(n1, n2, n3)
+
+query <- glue_sql("
+  INSERT INTO cached_runs_2
+  VALUES (
+    <<n1>>,
+    <<n2>>,
+    <<n3>>,
+    '{<<r$x*>>}',
+    '{<<r$y*>>}'
+  );
+  ", .con = con, .open="<<", .close=">>")
+
+query
+
+q <- dbExecute(con, query)
+```
+
+get the list data from db as a list
+```{r}
+query <- glue_sql("SELECT * FROM cached_runs_2")
+results <- dbGetQuery(con, query)
+results
+```
+
+convert the x and y columns to an double arrays. similar solutions in https://stackoverflow.com/q/40637545
+
+```{r convert-result-x-y-character-cols-to-double-list}
+as.numeric_list <- function(x) {
+  result <- x %>%
+    str_sub(2,-2) %>%    # remove the { and } characters
+    str_split(",") %>%   # split the string based on comma
+    unlist %>%           # remove one level of lists that gets added by str_split()
+    map_dbl(as.double)   # convert each element to a double,
+                         # use map_dbl so it will return an atomic vector of doubles
+  
+  return(result)
+}
+
+x <- as.numeric_list(results$x)
+y <- as.numeric_list(results$y)
+
+tribble(
+  ~x, ~y,
+  x, y
+)
+```
+
+PostgreSQL supports other datatypes. You can see them listed in the [documentation](https://www.postgresql.org/docs/9.3/datatype-geometric.html). We could try using one of the geometric datatypes to store the x and y data points.
+
+Let's try storing the data as an open path.
+
+First create the database table:
+```{sql create-db-table-path, connection=con}
+CREATE TABLE cached_runs_3 (
+  n1 integer,
+  n2 integer,
+  n3 integer,
+  points path
+)
+```
+
+```{r save-run-to-db-as-path}
+n1 <- 0
+n2 <- 0
+n3 <- 0
+r <- spiro_without_db(n1, n2, n3)
+
+# format the points as a string like:
+# "(x1,y1), ..., (xn,yn)"
+points_str <- map2_chr(
+    r$x, 
+    r$y,
+    function(x,y) {glue("({x},{y})")}
+  ) %>%
+  str_c(collapse = ",")
+
+# surround the string with square brackets
+# do this before the glue_sql so we can get the
+# quotes outside the square brackets in the sql statement
+points_str <- glue("[{points_str}]")
+
+# craft the sql statement
+query <- glue_sql("
+  INSERT INTO cached_runs_3
+  VALUES ( {n1}, {n2}, {n3}, {points_str} );
+  ", .con = con)
+
+query
+
+dbExecute(con, query)
+```
+
+get the list data from db as a list
+```{r}
+query <- glue_sql("SELECT * FROM cached_runs_3")
+results <- dbGetQuery(con, query)
+results
+```
+
+To use this value in a plot, we have to parse the x and y values from the path and put them into separate columns of a data frame.
+
+One advantage of geometric fields is that we can use postgresql's built in geometric functions. For more information on on the geometric functions see https://www.postgresql.org/docs/current/functions-geometry.html
+
+
+disconnect
+```{r}
+dbDisconnect(con)
+```
+
+shut down the docker container:
+```{bash}
+docker-compose down
+docker volume rm spiro_with_postrgresql_pg_data
+```
