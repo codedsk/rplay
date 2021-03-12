@@ -12,6 +12,7 @@ install.packages(c(
   "dbplyr",
   "ggplot2",
   "knitr",
+  "lubridate",
   "purrr",
   "rmarkdown",
   "stringr",
@@ -24,6 +25,7 @@ install.packages(c(
 library(DBI)
 library(dplyr)
 library(ggplot2)
+library(lubridate)
 library(tibble)
 library(glue)
 library(stringr)
@@ -120,9 +122,9 @@ as.numeric_list <- function(x) {
 x <- as.numeric_list(results$x)
 y <- as.numeric_list(results$y)
 
-tribble(
-  ~x, ~y,
-  x, y
+tibble(
+  x = x,
+  y = y
 )
 ```
 
@@ -182,6 +184,126 @@ To use this value in a plot, we have to parse the x and y values from the path a
 
 One advantage of geometric fields is that we can use postgresql's built in geometric functions. For more information on on the geometric functions see https://www.postgresql.org/docs/current/functions-geometry.html
 
+PostgreSQL supports a datetime datatype documented at https://www.postgresql.org/docs/12/datatype-datetime.html. In this example, we use the `timestamptz` datatype, which creates a column sutible for a timestamp that includes a timezone
+
+Create the database table:
+```{sql create-db-table-with-pkey-timestamp, connection=con}
+CREATE TABLE cached_runs_4 (
+  spirograph_id serial PRIMARY KEY,
+  n1 integer,
+  n2 integer,
+  n3 integer,
+  create_date timestamptz
+)
+```
+
+```{r save-run-with-pkey-timestamp}
+n1 <- 0
+n2 <- 0
+n3 <- 0
+r <- spiro_without_db(n1, n2, n3)
+
+create_date <- now()
+
+# craft the sql statement
+query <- glue_sql("
+  INSERT INTO cached_runs_4 (n1, n2, n3, create_date)
+  VALUES ( {n1}, {n2}, {n3}, {format_ISO8601(create_date, usetz=TRUE)} );
+  ", .con = con)
+
+query
+
+dbExecute(con, query)
+```
+
+get the entry back from db:
+```{r retrieve-data-from-db-with-pkey-timestamp}
+query <- glue_sql("SELECT * FROM cached_runs_4")
+results <- dbGetQuery(con, query)
+results
+```
+
+convert the create_date to a lubridate object
+```{r convert-posixct-to-lubidate-object}
+
+retrieved_create_date <- as_datetime(results$create_date[1])
+retrieved_create_date
+create_date
+```
+
+We can set a default value for the timestamp column by using the `CURRENT_TIMESTAMP` function, [documented here](https://www.postgresql.org/docs/12/functions-datetime.html#FUNCTIONS-DATETIME-CURRENT):
+```{sql create-db-table-with-pkey-and-default-timestamp, connection=con}
+CREATE TABLE cached_runs_5 (
+  spirograph_id serial PRIMARY KEY,
+  n1 integer,
+  n2 integer,
+  n3 integer,
+  create_date timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP
+)
+```
+
+If we don't give a timestamp in our SQL statement, it will be automatically filled in for us.
+```{r save-run-with-pkey-and-default-timestamp}
+n1 <- 0
+n2 <- 0
+n3 <- 0
+r <- spiro_without_db(n1, n2, n3)
+
+# craft the sql statement
+query <- glue_sql("
+  INSERT INTO cached_runs_5 (n1, n2, n3)
+  VALUES ( {n1}, {n2}, {n3} );
+  ", .con = con)
+
+query
+
+dbExecute(con, query)
+```
+
+get the entry back from db:
+```{r}
+query <- glue_sql("SELECT * FROM cached_runs_5")
+results <- dbGetQuery(con, query)
+results
+```
+
+convert the create_date to a lubridate object
+```{r convert-default-timestamp-to-lubidate-object}
+
+retrieved_create_date <- as_datetime(results$create_date[1])
+retrieved_create_date
+```
+
+interact with the table with the dbplyr package:
+```{r retrieve-table-with-dbplyr}
+cached_runs_5 <- tbl(con,"cached_runs_5")
+cached_runs_5
+```
+
+if we add a new row to the database table with an sql statement, the next time we query the `cached_runs_5` tibble, it will retrieve the new data.
+```{r add-row-to-table-lazily-updates-tibble}
+n1 <- 7
+n2 <- 13 
+n3 <- -3
+r <- spiro_without_db(n1, n2, n3)
+
+# craft the sql statement
+query <- glue_sql("
+  INSERT INTO cached_runs_5 (n1, n2, n3)
+  VALUES ( {n1}, {n2}, {n3} );
+  ", .con = con)
+
+query
+
+dbExecute(con, query)
+
+cached_runs_5
+```
+
+Other interesting articles:
+1. [Example Shiny app backed by db](https://www.r-bloggers.com/2020/08/shiny-in-production-app-and-database-syncing/)
+2. [PostgreSQL Numeric Datatypes](https://www.postgresql.org/docs/current/datatype-numeric.html)
+3. [Understanding quosures may be helpful](https://www.r-bloggers.com/2019/07/bang-bang-how-to-program-with-dplyr/)
 
 disconnect
 ```{r}
