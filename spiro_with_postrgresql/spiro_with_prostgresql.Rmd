@@ -324,6 +324,11 @@ cached_runs_5 %>%
 ```
 
 
+Write a new version of the spiro function that accepts three parameters, n1, n2, and n3 and checks a database table to for a record of a previously cached run. If the database table does not have any runs with matching n1, n2, and n3 values, then calculate the x and y values for a new spirograph, store a new record into the database table, and return the x and y columns back to the caller as a tibble. If the database table does have a run with matching n1, n2, and n3, then return the x and y values columns back to the caller as a tibble.
+
+```{r spiro-with-db}
+
+```
 
 Other interesting articles:
 1. [Example Shiny app backed by db](https://www.r-bloggers.com/2020/08/shiny-in-production-app-and-database-syncing/)
