@@ -231,6 +231,13 @@ retrieved_create_date
 create_date
 ```
 
+We can also tell sql what time zone we want the timestamp back as with `at time zone '...'`
+```{r convert-timestamp-to-different-timezone}
+query <- glue_sql("SELECT create_date at time zone 'est' FROM cached_runs_4")
+results <- dbGetQuery(con, query)
+results
+```
+
 We can set a default value for the timestamp column by using the `CURRENT_TIMESTAMP` function, [documented here](https://www.postgresql.org/docs/12/functions-datetime.html#FUNCTIONS-DATETIME-CURRENT):
 ```{sql create-db-table-with-pkey-and-default-timestamp, connection=con}
 CREATE TABLE cached_runs_5 (
@@ -283,7 +290,7 @@ cached_runs_5
 if we add a new row to the database table with an sql statement, the next time we query the `cached_runs_5` tibble, it will retrieve the new data.
 ```{r add-row-to-table-lazily-updates-tibble}
 n1 <- 7
-n2 <- 13 
+n2 <- 12 
 n3 <- -3
 r <- spiro_without_db(n1, n2, n3)
 
@@ -299,6 +306,24 @@ dbExecute(con, query)
 
 cached_runs_5
 ```
+
+Using dplyr verbs to interact with the database table. These get automatically translated into SQL queries.
+```{r use-dplyr-verbs-to-retrieve-data}
+cached_runs_5 %>%
+  filter(n1 == 7 & n2 == 12) %>%
+  show_query()
+```
+
+Using variables in dplyr is a little bit tricky. One way may be to use the `local()` function to evaluate an expression (getting the value of our variable) within a specific environment.
+```{r use-dplyr-verbs-and-variables-to-retrieve-data}
+n1 <- 7
+n2 <- 12
+cached_runs_5 %>%
+  filter(n1 == local(n1) & n2 == local(n2)) %>%
+  show_query()
+```
+
+
 
 Other interesting articles:
 1. [Example Shiny app backed by db](https://www.r-bloggers.com/2020/08/shiny-in-production-app-and-database-syncing/)
